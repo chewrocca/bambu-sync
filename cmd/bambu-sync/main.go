@@ -18,6 +18,7 @@ import (
 	"net/http/pprof"
 	"os"
 	"os/signal"
+	"runtime"
 	"syscall"
 	"time"
 
@@ -123,6 +124,15 @@ func run(once, alerting bool, log *slog.Logger) error {
 	// that would expose them on any server sharing that mux, whether or not
 	// this flag is set.
 	if cfg.PprofEnabled {
+		// Block and mutex profiles are DISABLED in the runtime by default and
+		// return empty rather than erroring -- a scraper would collect them
+		// happily and show nothing, which reads as "no contention" instead of
+		// "not measured". Sampling rates are deliberately coarse: this service
+		// is idle almost all the time, so fine-grained sampling would cost more
+		// than it reveals.
+		runtime.SetBlockProfileRate(10000)   // 1 in 10k blocking events
+		runtime.SetMutexProfileFraction(100) // 1 in 100 contention events
+
 		log.Warn("pprof enabled", "path", "/debug/pprof", "addr", cfg.ListenAddr)
 		mux.HandleFunc("/debug/pprof/", pprof.Index)
 		mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
