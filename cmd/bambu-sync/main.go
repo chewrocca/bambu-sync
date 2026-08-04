@@ -37,6 +37,12 @@ import (
 	"github.com/chewrocca/bambu-sync/internal/sync"
 )
 
+// version is set at build time via -ldflags "-X main.version=...". It is
+// surfaced as bambu_sync_build_info so a running pod can be traced back to a
+// tag without shelling in -- which matters here, because the image is
+// distroless and there is no shell to exec into.
+var version = "dev"
+
 func main() {
 	once := flag.Bool("once", false, "run a single full sync, print metrics to stdout, and exit")
 	alerting := flag.Bool("alerting", false, "with -once, also evaluate and send alerts")
@@ -63,10 +69,15 @@ func run(once, alerting bool, log *slog.Logger) error {
 		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
 	)
 
+	// One Set: metrics.New registers against reg, so calling it twice would
+	// panic on duplicate registration.
+	m := metrics.New(reg)
+	m.BuildInfo.WithLabelValues(version).Set(1)
+
 	s := &sync.Syncer{
 		Cfg:      cfg,
 		Client:   bambu.New(cfg.BaseURL),
-		Metrics:  metrics.New(reg),
+		Metrics:  m,
 		Humidity: humidity.New(cfg.HumidityURL, cfg.HumidityMetric),
 		Slack:    notify.New(cfg.SlackUsername, cfg.SlackIconEmoji),
 		Log:      log,

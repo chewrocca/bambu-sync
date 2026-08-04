@@ -57,6 +57,7 @@ func (s *Syncer) Run(ctx context.Context, opts Options) error {
 	s.Metrics.LastRun.Set(float64(start.Unix()))
 
 	err := s.run(ctx, opts)
+	s.Metrics.SyncDuration.Set(time.Since(start).Seconds())
 
 	switch {
 	case err == nil:
@@ -98,6 +99,7 @@ func (s *Syncer) run(ctx context.Context, opts Options) error {
 	// exporter exists. A failure here must not lose the sync.
 	devices, devErr := s.Client.Devices(ctx, token)
 	if devErr != nil {
+		s.Metrics.APIErrors.WithLabelValues("devices").Inc()
 		s.Log.Warn("device list unavailable", "err", devErr)
 		devices = &bambu.BindResponse{}
 	}
@@ -161,6 +163,7 @@ func (s *Syncer) run(ctx context.Context, opts Options) error {
 // scheduled task posted this, because the script exited first; in Kubernetes
 // there is no wrapper, so the service must announce its own death.
 func (s *Syncer) handleFetchErr(ctx context.Context, what string, err error, opts Options) error {
+	s.Metrics.APIErrors.WithLabelValues(what).Inc()
 	if errors.Is(err, bambu.ErrTokenExpired) && opts.Alerting && s.Cfg.SlackEnabled {
 		if hook, rerr := config.ReadSecret(s.Cfg.SlackWebhookFile); rerr == nil {
 			_ = s.Slack.Post(ctx, hook, []notify.Alert{{
@@ -243,6 +246,12 @@ func (s *Syncer) publish(spools []stock.Spool, tasks []bambu.Task, favs []bambu.
 		// ambiguous="true" means this figure is the colour+material GROUP's
 		// consumption, not this spool's. Summing across spools would
 		// double-count.
+		depleted := 0.0
+		if sp.Depleted {
+			depleted = 1
+		}
+		s.Metrics.SpoolDepleted.WithLabelValues(sp.Name, sp.Material, sp.Color).Set(depleted)
+
 		s.Metrics.SpoolUsedGrams.WithLabelValues(
 			sp.Name, sp.Material, sp.Color, s.Cfg.StoreURL,
 			strconv.FormatBool(sp.AmbiguousUsage()),

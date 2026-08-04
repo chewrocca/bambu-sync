@@ -16,66 +16,54 @@ what you have bookmarked. Same printer, different data source.
 
 ## Metrics
 
-Naming convention: **`bambu_*` is the cloud plane** (this exporter).
-**`bambulab_*` is the device plane** (the MQTT exporters). Not self-evident, so
-worth stating.
+**Full reference: [docs/METRICS.md](docs/METRICS.md)** — every metric, its
+labels, and the caveats that matter.
 
-| Metric | Description |
+Naming convention: **`bambu_*` is the cloud plane** (this exporter, reading
+your *account*). **`bambulab_*` is the device plane** (the LAN MQTT exporters,
+reading the *printer*). They do not overlap and neither replaces the other.
+
+| Group | |
 | --- | --- |
-| `bambu_sync_up` | 1 if the last full sync succeeded |
-| `bambu_sync_last_run_timestamp_seconds` | Unix time of the last full sync |
-| `bambu_sync_last_exit_code` | 0 ok, 1 error, 2 token expired |
-| `bambu_token_expires_timestamp_seconds` | When the cloud token expires |
-| `bambu_print_probe_last_run_timestamp_seconds` | Last fast current-print poll |
-| `bambu_spool_remaining_grams` | Remaining filament per registered spool |
-| `bambu_spool_remaining_percent` | Same, as a percentage of capacity |
-| `bambu_spool_used_grams` | Lifetime consumption — **read the `ambiguous` label** |
-| `bambu_prints_succeeded` / `bambu_prints_failed` | Counts in fetched history |
-| `bambu_filter_hours` / `bambu_filter_percent` | Activated-carbon filter wear |
-| `bambu_print_info` | Recent prints; value is grams, labels carry model, URL and slicer profile |
-| `bambu_print_duration_seconds` | Wall-clock duration, same labels as `bambu_print_info` |
-| `bambu_queue_item` | MakerWorld favourites; value is that design's print count |
-| `bambu_makerworld_favorites` | Count of favourites |
-| `bambu_device_info` | Printer identity — **the only accurate model source**, see below |
-| `bambu_device_online` | 1 if Bambu's cloud considers the printer online |
-| `bambu_prints_by_material` | Prints per material across the full fetched history |
-| `bambu_filament_used_grams` / `_total` | Filament consumed, per material and overall |
+| **Filament** | Per-spool remaining weight and percent, lifetime consumption, depleted flag |
+| **Prints** | Recent prints with model, URL, slicer profile, duration and grams; success/failure counts; per-material aggregates |
+| **Consumables** | Activated-carbon filter wear against its 1,440-hour interval |
+| **Printer** | Identity and cloud-side online status |
+| **MakerWorld** | Favourites, treated as a print queue |
+| **Exporter health** | `up`, last-run, duration, build info, per-endpoint error counter, token expiry |
 
-### The cloud is the only place the printer is named correctly
+Three things are worth knowing before you build anything on these:
 
-`bambu_device_info` carries `product_name` — `"X2D"` on the printer this was
-built against. That matters because the **LAN MQTT payload cannot express it**:
-it carries no `module` list and a null `print.sn`, so MQTT exporters fall
-through to a legacy `device.type` table where the X2D's `type == 1` is already
-claimed by the X1C. They report an X2D as an X1C. The cloud API just says X2D.
+- **`bambu_spool_used_grams` is not always summable.** Print history reports
+  only the broad material, never the variant, so two same-colour spools share
+  one figure. It carries an `ambiguous` label saying so. Summing blindly
+  reports 1,770 g from 885 g of filament.
+- **Only RFID-registered spools appear.** Sealed spares the AMS has never
+  scanned are invisible, so "nothing running low" means nothing low *among
+  what has been loaded*.
+- **`bambu_device_info`'s `product_name` is the only accurate model
+  identification available** — MQTT exporters report an X2D as an X1C, because
+  the LAN payload cannot express the difference.
 
-> **`dev_access_code` is deliberately not carried.** The API returns the
-> printer's LAN credential on every device. It is not mapped onto the struct at
-> all — not mapped-and-unused — so it is discarded at unmarshal and can never
-> reach a metric label. A test enforces this.
+## Dashboards
 
-**Only RFID-registered spools appear.** Sealed spares are invisible to the API,
-so "nothing running low" means nothing low *among what has been loaded*.
-Weights are the AMS's running estimate, not a scale reading — they drift.
+Two example dashboards in [`dashboards/`](dashboards/), ready to import.
 
-### Usage attribution is deliberately ambiguous in one case
+![Maintenance & History](assets/maintenance-history.png)
 
-Print history reports only the broad material (`PLA`), never the variant
-(`PLA Matte` vs `PLA Basic`). Two spools of the same colour and material
-therefore share one usage figure, and it belongs to the **group**, not to
-either spool. `bambu_spool_remaining_*` is per-spool and exact; consumption is
-not split. Attributing it to both would double-count.
+**Maintenance & History** — filter wear, print history with duration and
+slicer profile, MakerWorld queue, and sync health including token expiry.
 
-`bambu_spool_used_grams` carries an **`ambiguous`** label saying exactly this:
+![Filament Inventory](assets/filament-inventory.png)
 
-```
-bambu_spool_used_grams{name="PLA Basic",color="#000000",ambiguous="true"} 884.91
-bambu_spool_used_grams{name="PLA Matte",color="#000000",ambiguous="true"} 884.91
-```
+**Filament Inventory** — registered spools with levels, reorder threshold,
+lifetime usage, and which spool is in which AMS slot. AMS humidity and
+temperature come from the MQTT exporter, not this one.
 
-Both report the group's 884.91 g, because there is no way to tell from the API
-which spool consumed what. **Do not `sum()` across spools without filtering on
-`ambiguous="false"`** — you would report 1770 g from 885 g of filament.
+> **These are examples, not a maintained product.** Datasources are template
+> variables, so set them on import. They are Grafana schema **v2**
+> (`dashboard.grafana.app/v2`), which is recent — older Grafana will not import
+> them directly. Adapt them; do not expect updates.
 
 ## Configuration
 

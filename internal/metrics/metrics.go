@@ -35,6 +35,10 @@ type Set struct {
 	QueueItem             *prometheus.GaugeVec
 	Favorites             prometheus.Gauge
 
+	BuildInfo         *prometheus.GaugeVec
+	SyncDuration      prometheus.Gauge
+	APIErrors         *prometheus.CounterVec
+	SpoolDepleted     *prometheus.GaugeVec
 	DeviceInfo        *prometheus.GaugeVec
 	DeviceOnline      *prometheus.GaugeVec
 	PrintsByMaterial  *prometheus.GaugeVec
@@ -114,6 +118,24 @@ func New(reg prometheus.Registerer) *Set {
 		// dev_access_code is NOT and must never be a label: it is the
 		// printer's LAN credential, and a label would put it in Grafana Cloud
 		// in plaintext, indexed, indefinitely.
+		// Standard exporter hygiene: lets a running pod be traced to a tag.
+		// Especially useful here -- the image is distroless, so there is no
+		// shell to exec in and ask.
+		BuildInfo: f.gaugeVec("bambu_sync_build_info",
+			"Build information. Always 1.",
+			[]string{"version"}),
+		// Which endpoint failed, not merely that something did. The API is
+		// undocumented and can change one endpoint at a time, so "tasks is
+		// failing but filament is fine" is the diagnosis that saves an hour.
+		APIErrors: f.counterVec("bambu_api_errors_total",
+			"Bambu cloud API request failures, by endpoint.",
+			[]string{"endpoint"}),
+		// A finished roll. Deliberately its own metric rather than a label on
+		// bambu_spool_remaining_grams: adding a label there would change every
+		// existing series identity and break the dashboards.
+		SpoolDepleted: f.gaugeVec("bambu_spool_depleted",
+			"1 if the spool is marked depleted (a finished roll, not a reorder signal).",
+			[]string{"name", "material", "color"}),
 		DeviceInfo: f.gaugeVec("bambu_device_info",
 			"Bound printer identity from the cloud account. Always 1.",
 			[]string{"name", "serial", "product_name", "model_name", "structure"}),
@@ -144,6 +166,11 @@ func New(reg prometheus.Registerer) *Set {
 	// the colour+material ambiguity never arises and each gram is counted once.
 	s.FilamentGramsAll = f.gauge("bambu_filament_used_grams_total",
 		"Total filament consumed across the fetched print history.")
+	// How long the upstream took. The neighbouring MQTT exporter publishes an
+	// equivalent; without one, a slow-but-succeeding API looks identical to a
+	// fast one right up until it times out.
+	s.SyncDuration = f.gauge("bambu_sync_duration_seconds",
+		"Wall-clock duration of the last full sync.")
 	return s
 }
 
@@ -154,6 +181,7 @@ func (s *Set) ResetDynamic() {
 	s.SpoolRemainingGrams.Reset()
 	s.SpoolRemainingPercent.Reset()
 	s.SpoolUsedGrams.Reset()
+	s.SpoolDepleted.Reset()
 	s.QueueItem.Reset()
 	s.DeviceInfo.Reset()
 	s.DeviceOnline.Reset()
@@ -179,6 +207,12 @@ func (f factory) gauge(name, help string) prometheus.Gauge {
 	g := prometheus.NewGauge(prometheus.GaugeOpts{Name: name, Help: help})
 	f.reg.MustRegister(g)
 	return g
+}
+
+func (f factory) counterVec(name, help string, labels []string) *prometheus.CounterVec {
+	c := prometheus.NewCounterVec(prometheus.CounterOpts{Name: name, Help: help}, labels)
+	f.reg.MustRegister(c)
+	return c
 }
 
 func (f factory) gaugeVec(name, help string, labels []string) *prometheus.GaugeVec {

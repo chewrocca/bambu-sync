@@ -1,0 +1,763 @@
+{
+  "apiVersion": "dashboard.grafana.app/v2",
+  "kind": "Dashboard",
+  "metadata": {
+    "name": "filament-inventory"
+  },
+  "spec": {
+    "annotations": [
+      {
+        "kind": "AnnotationQuery",
+        "spec": {
+          "builtIn": true,
+          "enable": true,
+          "hide": true,
+          "iconColor": "rgba(0, 211, 255, 1)",
+          "name": "Annotations & Alerts",
+          "query": {
+            "datasource": {
+              "name": "-- Grafana --"
+            },
+            "group": "grafana",
+            "kind": "DataQuery",
+            "spec": {
+              "limit": 100,
+              "matchAny": false,
+              "tags": [],
+              "type": "dashboard"
+            },
+            "version": "v0"
+          }
+        }
+      }
+    ],
+    "cursorSync": "Off",
+    "description": "Registered spool inventory from the Bambu Cloud API, synced daily by bambu-sync. Only RFID-registered spools that have been loaded into the AMS appear here.\n\nEXAMPLE dashboard shipped with github.com/chewrocca/bambu-sync. Set the datasource variables on import. Not the maintained copy -- adapt it, do not expect updates.",
+    "editable": true,
+    "elements": {
+      "panel-2": {
+        "kind": "Panel",
+        "spec": {
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "hidden": false,
+                    "query": {
+                      "datasource": {
+                        "name": "${datasource}"
+                      },
+                      "group": "prometheus",
+                      "kind": "DataQuery",
+                      "spec": {
+                        "editorMode": "code",
+                        "expr": "count(bambu_spool_remaining_percent)",
+                        "instant": true,
+                        "legendFormat": "Spools",
+                        "range": false
+                      },
+                      "version": "v0"
+                    },
+                    "refId": "A"
+                  }
+                }
+              ],
+              "queryOptions": {},
+              "transformations": []
+            }
+          },
+          "description": "Total RFID-registered spools known to the AMS.",
+          "id": 2,
+          "links": [],
+          "title": "Spools registered",
+          "vizConfig": {
+            "group": "stat",
+            "kind": "VizConfig",
+            "spec": {
+              "fieldConfig": {
+                "defaults": {
+                  "color": {
+                    "mode": "thresholds"
+                  },
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "color": "blue",
+                        "value": 0
+                      }
+                    ]
+                  },
+                  "unit": "short"
+                },
+                "overrides": []
+              },
+              "options": {
+                "colorMode": "value",
+                "graphMode": "none",
+                "justifyMode": "auto",
+                "orientation": "auto",
+                "percentChangeColorMode": "standard",
+                "reduceOptions": {
+                  "calcs": [
+                    "lastNotNull"
+                  ],
+                  "fields": "",
+                  "values": false
+                },
+                "showPercentChange": false,
+                "textMode": "auto",
+                "wideLayout": true
+              }
+            },
+            "version": "13.2.0-30402795349"
+          }
+        }
+      },
+      "panel-3": {
+        "kind": "Panel",
+        "spec": {
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "hidden": false,
+                    "query": {
+                      "datasource": {
+                        "name": "${datasource}"
+                      },
+                      "group": "prometheus",
+                      "kind": "DataQuery",
+                      "spec": {
+                        "editorMode": "code",
+                        "expr": "count(bambu_spool_remaining_grams <= 250)",
+                        "instant": true,
+                        "legendFormat": "Low spools",
+                        "range": false
+                      },
+                      "version": "v0"
+                    },
+                    "refId": "A"
+                  }
+                }
+              ],
+              "queryOptions": {},
+              "transformations": []
+            }
+          },
+          "description": "Spools at or below the 250 g reorder threshold used by the exporter's Slack alert.",
+          "id": 3,
+          "links": [],
+          "title": "At or below 250 g",
+          "vizConfig": {
+            "group": "stat",
+            "kind": "VizConfig",
+            "spec": {
+              "fieldConfig": {
+                "defaults": {
+                  "color": {
+                    "mode": "thresholds"
+                  },
+                  "noValue": "0",
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "color": "blue",
+                        "value": 0
+                      },
+                      {
+                        "color": "red",
+                        "value": 1
+                      }
+                    ]
+                  },
+                  "unit": "short"
+                },
+                "overrides": []
+              },
+              "options": {
+                "colorMode": "background",
+                "graphMode": "none",
+                "justifyMode": "auto",
+                "orientation": "auto",
+                "percentChangeColorMode": "standard",
+                "reduceOptions": {
+                  "calcs": [
+                    "lastNotNull"
+                  ],
+                  "fields": "",
+                  "values": false
+                },
+                "showPercentChange": false,
+                "textMode": "auto",
+                "wideLayout": true
+              }
+            },
+            "version": "13.2.0-30402795349"
+          }
+        }
+      },
+      "panel-4": {
+        "kind": "Panel",
+        "spec": {
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [],
+              "queryOptions": {},
+              "transformations": []
+            }
+          },
+          "description": "",
+          "id": 4,
+          "links": [],
+          "title": "",
+          "vizConfig": {
+            "group": "text",
+            "kind": "VizConfig",
+            "spec": {
+              "fieldConfig": {
+                "defaults": {},
+                "overrides": []
+              },
+              "options": {
+                "code": {
+                  "language": "plaintext",
+                  "showLineNumbers": false,
+                  "showMiniMap": false
+                },
+                "content": "Rows are color-coded the same way as the reorder alert: **blue** = plenty left, **orange** = getting low, **red** = at or under the 250 g threshold the exporter alerts Slack on. This covers only spools the AMS has RFID-scanned at least once \u2014 sealed spares aren't visible here. Live AMS tray state (what's loaded right now) is on the [Bambulab Metrics](/d/idfdksr/bambulab-metrics) dashboard. Click a spool's name to open its Bambu store page.",
+                "mode": "markdown"
+              }
+            },
+            "version": "13.2.0-30402795349"
+          }
+        }
+      },
+      "panel-6": {
+        "kind": "Panel",
+        "spec": {
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "hidden": false,
+                    "query": {
+                      "datasource": {
+                        "name": "${datasource}"
+                      },
+                      "group": "prometheus",
+                      "kind": "DataQuery",
+                      "spec": {
+                        "editorMode": "code",
+                        "expr": "bambu_spool_remaining_percent",
+                        "instant": true,
+                        "legendFormat": "pct",
+                        "range": false
+                      },
+                      "version": "v0"
+                    },
+                    "refId": "A"
+                  }
+                },
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "hidden": false,
+                    "query": {
+                      "datasource": {
+                        "name": "${datasource}"
+                      },
+                      "group": "prometheus",
+                      "kind": "DataQuery",
+                      "spec": {
+                        "editorMode": "code",
+                        "expr": "bambu_spool_used_grams",
+                        "instant": true,
+                        "legendFormat": "pct",
+                        "range": false
+                      },
+                      "version": "v0"
+                    },
+                    "refId": "B"
+                  }
+                }
+              ],
+              "queryOptions": {},
+              "transformations": [
+                {
+                  "group": "labelsToFields",
+                  "kind": "Transformation",
+                  "spec": {
+                    "options": {
+                      "keepLabels": [
+                        "name",
+                        "material",
+                        "color",
+                        "store",
+                        "grams",
+                        "capacity",
+                        "loaded",
+                        "ams_slot",
+                        "ambiguous"
+                      ]
+                    }
+                  }
+                },
+                {
+                  "group": "merge",
+                  "kind": "Transformation",
+                  "spec": {
+                    "options": {}
+                  }
+                },
+                {
+                  "group": "renameByRegex",
+                  "kind": "Transformation",
+                  "spec": {
+                    "options": {
+                      "regex": "(.*remaining_percent)",
+                      "renamePattern": "pct"
+                    }
+                  }
+                },
+                {
+                  "group": "renameByRegex",
+                  "kind": "Transformation",
+                  "spec": {
+                    "options": {
+                      "regex": "(.*spool_used_grams)",
+                      "renamePattern": "used"
+                    }
+                  }
+                },
+                {
+                  "group": "sortBy",
+                  "kind": "Transformation",
+                  "spec": {
+                    "options": {
+                      "fields": {},
+                      "sort": [
+                        {
+                          "desc": false,
+                          "field": "material"
+                        },
+                        {
+                          "desc": false,
+                          "field": "pct"
+                        }
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "description": "One row per registered spool: color, name (links to the Bambu store), type, hex code, remaining bar, percent, and grams. Grouped by type.\n\nThe Used column is lifetime consumption. A dagger means the figure belongs to a colour+material GROUP rather than to that spool alone \u2014 print history reports only the broad material, so two black PLA spools are indistinguishable in the usage feed. Do not add daggered rows together.",
+          "id": 6,
+          "links": [],
+          "title": "Filament spools",
+          "vizConfig": {
+            "group": "marcusolsson-dynamictext-panel",
+            "kind": "VizConfig",
+            "spec": {
+              "fieldConfig": {
+                "defaults": {
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "color": "blue",
+                        "value": 0
+                      }
+                    ]
+                  }
+                },
+                "overrides": []
+              },
+              "options": {
+                "afterRender": "",
+                "content": "<div style=\"display:flex;flex-direction:column;font-size:13px;\">\n  <div style=\"display:flex;align-items:center;gap:12px;padding:2px 14px 6px;font-size:11px;color:rgba(255,255,255,0.45);text-transform:uppercase;letter-spacing:0.04em;\">\n    <div style=\"width:18px;min-width:18px;\"></div>\n    <div style=\"flex:2;min-width:160px;\">Name</div>\n    <div style=\"width:70px;min-width:70px;\">Type</div>\n    <div style=\"width:90px;min-width:90px;\">Hex</div>\n    <div style=\"flex:1;min-width:140px;\">Remaining</div>\n    <div style=\"width:46px;min-width:46px;text-align:right;\">%</div>\n    <div style=\"width:70px;min-width:70px;text-align:right;\">Grams</div>\n    <div style=\"width:78px;min-width:78px;text-align:right;\">Used</div>\n  </div>\n{{#each data}}\n<div style=\"display:flex;align-items:center;gap:12px;padding:7px 14px;border-bottom:1px solid rgba(255,255,255,0.08);\">\n  <div style=\"width:18px;height:18px;min-width:18px;border-radius:50%;border:1.5px solid rgba(255,255,255,0.28);background:{{color}};\"></div>\n  <div style=\"flex:2;min-width:160px;display:flex;align-items:center;gap:6px;\">\n    <a href=\"{{store}}\" target=\"_blank\" rel=\"noopener\" style=\"color:#8ab4f8;text-decoration:none;\">{{name}}</a>\n    {{#if ams_slot}}<span style=\"font-size:10px;font-weight:600;color:#5794F2;background:rgba(87,148,242,0.15);border:1px solid rgba(87,148,242,0.4);border-radius:3px;padding:1px 5px;white-space:nowrap;\">{{ams_slot}}</span>{{/if}}\n  </div>\n  <div style=\"width:70px;min-width:70px;color:rgba(255,255,255,0.7);\">{{material}}</div>\n  <div style=\"width:90px;min-width:90px;font-family:monospace;color:rgba(255,255,255,0.65);\">{{color}}</div>\n  <div style=\"flex:1;min-width:140px;height:8px;border-radius:4px;background:rgba(255,255,255,0.1);\">\n    <div style=\"height:8px;border-radius:4px;width:{{pct}}%;background:{{barColor pct}};\"></div>\n  </div>\n  <div style=\"width:46px;min-width:46px;text-align:right;color:{{barColor pct}};font-weight:600;\">{{pct}}%</div>\n  <div style=\"width:70px;min-width:70px;text-align:right;color:rgba(255,255,255,0.75);\">{{grams}} g</div>\n  <div style=\"width:78px;min-width:78px;text-align:right;color:rgba(255,255,255,0.5);font-variant-numeric:tabular-nums;\">{{usedCell used ambiguous}}</div>\n</div>\n{{/each}}\n</div>",
+                "contentPartials": [],
+                "defaultContent": "The query didn't return any results.",
+                "editor": {
+                  "format": "auto",
+                  "language": "html"
+                },
+                "editors": [
+                  "helpers"
+                ],
+                "externalStyles": [],
+                "helpers": "const handlebars = context.handlebars;\n\nhandlebars.registerHelper('barColor', function (pct) {\n  if (pct >= 50) return '#5794F2';\n  if (pct >= 25) return '#FF9830';\n  return '#F2495C';\n});\n\n// Print history reports only the broad material (\"PLA\"), never the variant, so\n// two spools sharing a colour and material share ONE usage figure that belongs\n// to the group. The exporter flags those with ambiguous=\"true\"; the dagger\n// says \"this number is not this spool's alone\" rather than showing it twice as\n// if it were.\nhandlebars.registerHelper('usedCell', function (used, ambiguous) {\n  const n = Number(used);\n  if (!isFinite(n)) return '';\n  return n.toFixed(0) + ' g' + (String(ambiguous) === 'true' ? ' \\u2020' : '');\n});",
+                "renderMode": "allRows",
+                "styles": "",
+                "wrap": true
+              }
+            },
+            "version": "6.3.0"
+          }
+        }
+      },
+      "panel-7": {
+        "kind": "Panel",
+        "spec": {
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "hidden": false,
+                    "query": {
+                      "datasource": {
+                        "name": "${datasource}"
+                      },
+                      "group": "prometheus",
+                      "kind": "DataQuery",
+                      "spec": {
+                        "editorMode": "code",
+                        "expr": "abs(max(bambulab_ams_unit_humidity{job=\"bambulab-exporter\", printer_name=\"bambulab\"}))",
+                        "instant": true,
+                        "legendFormat": "Humidity",
+                        "range": false
+                      },
+                      "version": "v0"
+                    },
+                    "refId": "A"
+                  }
+                }
+              ],
+              "queryOptions": {},
+              "transformations": []
+            }
+          },
+          "description": "AMS relative humidity, live from the Bambu Lab exporter via MQTT -- not the Bambu cloud API the exporter otherwise reads. Same thresholds as the exporter's Slack alert (warn 30%, critical 45%).",
+          "id": 7,
+          "links": [],
+          "title": "AMS humidity",
+          "vizConfig": {
+            "group": "gauge",
+            "kind": "VizConfig",
+            "spec": {
+              "fieldConfig": {
+                "defaults": {
+                  "color": {
+                    "fixedColor": "blue",
+                    "mode": "fixed"
+                  },
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "color": "blue",
+                        "value": 0
+                      },
+                      {
+                        "color": "orange",
+                        "value": 30
+                      },
+                      {
+                        "color": "red",
+                        "value": 45
+                      }
+                    ]
+                  },
+                  "unit": "percent"
+                },
+                "overrides": []
+              },
+              "options": {
+                "barShape": "rounded",
+                "barWidthFactor": 0.25,
+                "effects": {
+                  "barGlow": true,
+                  "centerGlow": true,
+                  "gradient": true
+                },
+                "endpointMarker": "glow",
+                "minVizHeight": 75,
+                "minVizWidth": 75,
+                "orientation": "auto",
+                "reduceOptions": {
+                  "calcs": [
+                    "lastNotNull"
+                  ],
+                  "fields": "",
+                  "values": false
+                },
+                "segmentCount": 10,
+                "segmentSpacing": 0.15,
+                "shape": "circle",
+                "showThresholdLabels": false,
+                "showThresholdMarkers": false,
+                "sizing": "auto",
+                "sparkline": true,
+                "textMode": "auto"
+              }
+            },
+            "version": "13.2.0-30402795349"
+          }
+        }
+      },
+      "panel-8": {
+        "kind": "Panel",
+        "spec": {
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "hidden": false,
+                    "query": {
+                      "datasource": {
+                        "name": "${datasource}"
+                      },
+                      "group": "prometheus",
+                      "kind": "DataQuery",
+                      "spec": {
+                        "editorMode": "code",
+                        "expr": "round(abs(max(bambulab_ams_unit_temperature_celsius{job=\"bambulab-exporter\", printer_name=\"bambulab\"})))",
+                        "instant": true,
+                        "legendFormat": "celsius",
+                        "range": false
+                      },
+                      "version": "v0"
+                    },
+                    "refId": "A"
+                  }
+                }
+              ],
+              "queryOptions": {},
+              "transformations": []
+            }
+          },
+          "description": "AMS temperature, live from the Bambu Lab exporter via MQTT. Switches between Celsius and Fahrenheit with the Units toggle at the top of the dashboard.",
+          "id": 8,
+          "links": [],
+          "title": "AMS temperature",
+          "vizConfig": {
+            "group": "marcusolsson-dynamictext-panel",
+            "kind": "VizConfig",
+            "spec": {
+              "fieldConfig": {
+                "defaults": {
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "color": "blue",
+                        "value": 0
+                      }
+                    ]
+                  }
+                },
+                "overrides": []
+              },
+              "options": {
+                "afterRender": "",
+                "content": "<div style=\"display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;\">\n{{#each data}}\n  {{#if (eq (variable \"units\") \"F\")}}\n  <div style=\"font-size:32px;font-weight:600;color:#fff;line-height:1.1;\">{{toF Value}}\u00b0F</div>\n  {{else}}\n  <div style=\"font-size:32px;font-weight:600;color:#fff;line-height:1.1;\">{{Value}}\u00b0C</div>\n  {{/if}}\n{{/each}}\n</div>",
+                "contentPartials": [],
+                "defaultContent": "<div style=\"padding:6px 12px;opacity:0.6;\">No data.</div>",
+                "editor": {
+                  "format": "auto",
+                  "language": "html"
+                },
+                "editors": [
+                  "helpers"
+                ],
+                "externalStyles": [],
+                "helpers": "const handlebars = context.handlebars;\n\nhandlebars.registerHelper('eq', function (a, b) { return a == b; });\nhandlebars.registerHelper('toF', function (c) { return Math.round((Number(c) * 9) / 5 + 32); });",
+                "renderMode": "allRows",
+                "styles": "",
+                "wrap": true
+              }
+            },
+            "version": "6.3.0"
+          }
+        }
+      }
+    },
+    "layout": {
+      "kind": "RowsLayout",
+      "spec": {
+        "rows": [
+          {
+            "kind": "RowsLayoutRow",
+            "spec": {
+              "collapse": false,
+              "layout": {
+                "kind": "GridLayout",
+                "spec": {
+                  "items": [
+                    {
+                      "kind": "GridLayoutItem",
+                      "spec": {
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "panel-2"
+                        },
+                        "height": 4,
+                        "width": 4,
+                        "x": 0,
+                        "y": 0
+                      }
+                    },
+                    {
+                      "kind": "GridLayoutItem",
+                      "spec": {
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "panel-3"
+                        },
+                        "height": 4,
+                        "width": 4,
+                        "x": 4,
+                        "y": 0
+                      }
+                    },
+                    {
+                      "kind": "GridLayoutItem",
+                      "spec": {
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "panel-4"
+                        },
+                        "height": 4,
+                        "width": 8,
+                        "x": 8,
+                        "y": 0
+                      }
+                    },
+                    {
+                      "kind": "GridLayoutItem",
+                      "spec": {
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "panel-7"
+                        },
+                        "height": 4,
+                        "width": 4,
+                        "x": 16,
+                        "y": 0
+                      }
+                    },
+                    {
+                      "kind": "GridLayoutItem",
+                      "spec": {
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "panel-8"
+                        },
+                        "height": 4,
+                        "width": 4,
+                        "x": 20,
+                        "y": 0
+                      }
+                    }
+                  ]
+                }
+              },
+              "title": "AT A GLANCE"
+            }
+          },
+          {
+            "kind": "RowsLayoutRow",
+            "spec": {
+              "collapse": false,
+              "layout": {
+                "kind": "GridLayout",
+                "spec": {
+                  "items": [
+                    {
+                      "kind": "GridLayoutItem",
+                      "spec": {
+                        "element": {
+                          "kind": "ElementReference",
+                          "name": "panel-6"
+                        },
+                        "height": 18,
+                        "width": 24,
+                        "x": 0,
+                        "y": 0
+                      }
+                    }
+                  ]
+                }
+              },
+              "title": "SPOOLS"
+            }
+          }
+        ]
+      }
+    },
+    "links": [
+      {
+        "asDropdown": true,
+        "icon": "external link",
+        "includeVars": true,
+        "keepTime": true,
+        "tags": [
+          "bambulabs"
+        ],
+        "targetBlank": false,
+        "title": "BambuLabs",
+        "tooltip": "",
+        "type": "dashboards"
+      }
+    ],
+    "liveNow": false,
+    "preload": false,
+    "tags": [
+      "3d-printing",
+      "bambulabs"
+    ],
+    "timeSettings": {
+      "autoRefresh": "1h",
+      "autoRefreshIntervals": [
+        "5s",
+        "10s",
+        "30s",
+        "1m",
+        "5m",
+        "15m",
+        "30m",
+        "1h",
+        "2h",
+        "1d"
+      ],
+      "fiscalYearStartMonth": 0,
+      "from": "now-1h",
+      "hideTimepicker": false,
+      "timezone": "browser",
+      "to": "now"
+    },
+    "title": "Filament Inventory",
+    "variables": [
+      {
+        "kind": "SwitchVariable",
+        "spec": {
+          "name": "units",
+          "label": "Imperial",
+          "current": "C",
+          "enabledValue": "F",
+          "disabledValue": "C",
+          "hide": "dontHide",
+          "skipUrlSync": false
+        }
+      }
+    ]
+  }
+}
