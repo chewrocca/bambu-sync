@@ -20,5 +20,9 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
 FROM gcr.io/distroless/static:nonroot
 COPY --from=build /out/bambu-sync /bambu-sync
 EXPOSE 9110
-USER nonroot:nonroot
+# NUMERIC uid:gid, not the `nonroot` name. Kubernetes' runAsNonRoot check
+# cannot verify a named user is non-root and refuses to start the container:
+#   "image has non-numeric user (nonroot), cannot verify user is non-root"
+# 65532 is distroless's nonroot user.
+USER 65532:65532
 ENTRYPOINT ["/bambu-sync"]
