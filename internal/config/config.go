@@ -48,6 +48,11 @@ type Config struct {
 
 	ListenAddr string
 
+	// PprofEnabled exposes /debug/pprof. Default OFF: those handlers expose
+	// goroutine stacks, heap contents and the process command line, and this
+	// binary holds a full-account bearer token. Opt in deliberately.
+	PprofEnabled bool
+
 	LowGrams      float64
 	HumidityWarn  float64
 	HumidityCrit  float64
@@ -86,6 +91,9 @@ func Load() (*Config, error) {
 	// ambiguous signal — it cannot distinguish "deliberately off" from
 	// "misconfigured" — so this is explicit.
 	if c.SlackEnabled, err = envBool("SLACK_ALERTS_ENABLED", false); err != nil {
+		return nil, err
+	}
+	if c.PprofEnabled, err = envBool("ENABLE_PPROF", false); err != nil {
 		return nil, err
 	}
 	if c.FastInterval, err = envDuration("SYNC_FAST_INTERVAL", 30*time.Minute); err != nil {

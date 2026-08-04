@@ -89,6 +89,7 @@ rotated Kubernetes Secret is picked up without a restart.
 | `TOKEN_WARN_DAYS` | `14` | Warn this far ahead of expiry |
 | `FAVORITES_LIMIT` / `PRINT_INFO_LIMIT` | `25` / `20` | Cardinality caps |
 | `LISTEN_ADDR` | `:9110` | |
+| `ENABLE_PPROF` | `false` | Serve `/debug/pprof` — **opt-in**, see below |
 | `TZ` | `UTC` | |
 
 Humidity thresholds sit deliberately **above** Bambu's stated <20% RH target:
@@ -213,6 +214,32 @@ JSON on stdout. Each completed run emits one record tagged
 ```
 {namespace="bambu"} | json | event="run_summary"
 ```
+
+## Profiling
+
+`ENABLE_PPROF=true` serves Go's standard `/debug/pprof` handlers on the same
+port as `/metrics`, so a Pyroscope scraper (or `go tool pprof`) can reach them.
+
+> **Off by default, deliberately.** Those handlers expose goroutine stacks,
+> heap contents and the process command line, and this binary holds a
+> full-account bearer token. Enable it on a cluster-internal Service, not on
+> anything reachable from outside.
+
+For Grafana Alloy's `pyroscope.scrape`, annotate the pod:
+
+```yaml
+metadata:
+  annotations:
+    pyroscope.grafana.com/scrape: "true"
+    pyroscope.grafana.com/port: "9110"
+```
+
+**Be honest about the value before you turn it on.** This service is idle
+almost all of the time — a handful of HTTP calls a day and two tickers. CPU
+profiles will be flat. What profiling is genuinely good for here is diagnosing
+a goroutine or memory leak in a long-running process *after* the Go collector's
+`go_goroutines` or `go_memstats_*` (exported by default) tell you one exists.
+Metrics find the problem; pprof explains it.
 
 ## Alerting
 

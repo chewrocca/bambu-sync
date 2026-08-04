@@ -15,6 +15,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/http/pprof"
 	"os"
 	"os/signal"
 	"syscall"
@@ -112,6 +113,23 @@ func run(once, alerting bool, log *slog.Logger) error {
 	}
 	mux.HandleFunc("/health", probe)
 	mux.HandleFunc("/ready", probe)
+
+	// pprof is OPT-IN. The handlers expose goroutine stacks, heap contents and
+	// the process command line; this binary holds a full-account bearer token,
+	// so they are not something to serve by default on a public image.
+	//
+	// Registered explicitly rather than via the net/http/pprof blank import,
+	// which attaches to http.DefaultServeMux -- a package-level side effect
+	// that would expose them on any server sharing that mux, whether or not
+	// this flag is set.
+	if cfg.PprofEnabled {
+		log.Warn("pprof enabled", "path", "/debug/pprof", "addr", cfg.ListenAddr)
+		mux.HandleFunc("/debug/pprof/", pprof.Index)
+		mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+		mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+		mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+		mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+	}
 
 	srv := &http.Server{Addr: cfg.ListenAddr, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 	go func() {

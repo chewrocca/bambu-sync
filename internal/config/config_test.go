@@ -118,3 +118,25 @@ func TestReadSecretRejectsEmpty(t *testing.T) {
 		t.Error("a missing secret file must be an error")
 	}
 }
+
+// pprof exposes goroutine stacks, heap contents and the process command line.
+// This binary holds a full-account bearer token, so the default must be OFF
+// and enabling it must be a deliberate act.
+func TestPprofDefaultsOff(t *testing.T) {
+	c, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.PprofEnabled {
+		t.Error("ENABLE_PPROF must default to false")
+	}
+
+	t.Setenv("ENABLE_PPROF", "true")
+	c, err = Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !c.PprofEnabled {
+		t.Error("ENABLE_PPROF=true should enable it")
+	}
+}
