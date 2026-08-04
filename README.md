@@ -1,6 +1,6 @@
 # bambu-sync
 
-Prometheus exporter for the **Bambu Lab Cloud API** — print history, RFID
+**A Prometheus exporter for the Bambu Lab Cloud API** — print history, RFID
 filament inventory, and MakerWorld favourites — with Slack alerting for the
 conditions worth acting on.
 
@@ -95,9 +95,34 @@ limits. Every entry is a distinct label set and both lists only grow.
 
 ## Authentication
 
+There is no API-key page in Bambu's UI. You log in as yourself and keep the
+bearer token it hands back.
+
+```sh
+curl -sS -X POST https://api.bambulab.com/v1/user-service/user/login \
+  -H 'Content-Type: application/json' \
+  -d '{"account":"you@example.com","password":"..."}'
+```
+
+Most accounts get `{"loginType":"verifyCode"}` and an **emailed code** rather
+than a token. Send it back with the code and no password:
+
+```sh
+curl -sS -X POST https://api.bambulab.com/v1/user-service/user/login \
+  -H 'Content-Type: application/json' \
+  -d '{"account":"you@example.com","code":"123456"}'
+```
+
+The response carries `accessToken` and `expiresIn` (seconds, ~3 months). Write
+the token to your token file, and **today + `expiresIn`** as `YYYY-MM-DD` to
+the expiry file.
+
+> Mind your shell history with a password on the command line — use a heredoc
+> or a file, not an inline `-d`, if that matters to you.
+
 The token is an **opaque bearer string, not a JWT** — its expiry cannot be
-decoded from it. That is why the expiry date is configured separately: it comes
-from the login response's `expiresIn` (~3 months).
+decoded from it. That is the whole reason the expiry date is configured
+separately.
 
 There is **no working refresh endpoint**. Re-authentication is manual and
 interactive: email, password, and an emailed 2FA code. When you re-auth,
@@ -106,16 +131,83 @@ the exporter warning against a stale date.
 
 ## Running
 
+Secrets are read from **files**, not environment variables, and re-read every
+cycle — so rotating a token does not need a restart. Three files, one per
+secret; `slack-webhook` is only needed with alerting on.
+
 ```sh
-bambu-sync              # serve /metrics, run on schedule
-bambu-sync -once        # single sync, print exposition text, exit
+mkdir -p ./secrets
+printf '%s' 'YOUR_TOKEN'  > ./secrets/token
+printf '%s' '2026-10-30'  > ./secrets/expires
 ```
 
-`-once` prints the metrics to stdout without serving, which makes it easy to
-diff against another implementation before trusting this one.
+### From source
 
-Logs are JSON on stdout. Each completed run emits one record tagged
-`"event":"run_summary"` for easy isolation in a log aggregator.
+Go 1.26+. No cgo, no build tags.
+
+```sh
+go build -o bambu-sync ./cmd/bambu-sync
+BAMBU_TOKEN_FILE=./secrets/token BAMBU_TOKEN_EXPIRY_FILE=./secrets/expires ./bambu-sync
+```
+
+```sh
+# Single sync, exposition text to stdout, no server. Good for a first run,
+# and for diffing against whatever you are replacing.
+BAMBU_TOKEN_FILE=./secrets/token BAMBU_TOKEN_EXPIRY_FILE=./secrets/expires ./bambu-sync -once
+```
+
+### Docker
+
+```sh
+docker run --rm -p 9110:9110 \
+  -v "$PWD/secrets:/etc/bambu:ro" \
+  -e TZ=America/Chicago \
+  ghcr.io/chewrocca/bambu-sync:latest
+```
+
+Images are published for `linux/amd64` and `linux/arm64`, so this runs on a
+Raspberry Pi as-is.
+
+### docker-compose
+
+```yaml
+services:
+  bambu-sync:
+    image: ghcr.io/chewrocca/bambu-sync:latest
+    restart: unless-stopped
+    ports: ["9110:9110"]
+    volumes:
+      - ./secrets:/etc/bambu:ro
+    environment:
+      TZ: America/Chicago
+      SYNC_DAILY_AT: "07:00"
+      # Optional: read AMS humidity from a LAN MQTT exporter, if you run one.
+      # HUMIDITY_METRICS_URL: http://bambulab-exporter:9109/metrics
+      # SLACK_ALERTS_ENABLED: "true"
+```
+
+Then point Prometheus at `bambu-sync:9110`.
+
+### Kubernetes
+
+[`deploy/example.yaml`](deploy/example.yaml) has a Deployment, a Service with
+scrape annotations, and a stub Secret:
+
+```sh
+kubectl apply -f deploy/example.yaml
+```
+
+Adapt the Secret to whatever you already use — External Secrets, Sealed
+Secrets, SOPS. The only requirement is that the values arrive as **files**.
+
+### Logs
+
+JSON on stdout. Each completed run emits one record tagged
+`"event":"run_summary"`; everything else is the surrounding trace. In Loki:
+
+```
+{namespace="bambu"} | json | event="run_summary"
+```
 
 ## Alerting
 
