@@ -218,6 +218,14 @@ func (s *Syncer) publish(spools []stock.Spool, tasks []bambu.Task, favs []bambu.
 			strconv.FormatBool(sp.Loaded),
 			sp.SlotLabel(),
 		).Set(sp.Percent)
+
+		// ambiguous="true" means this figure is the colour+material GROUP's
+		// consumption, not this spool's. Summing across spools would
+		// double-count.
+		s.Metrics.SpoolUsedGrams.WithLabelValues(
+			sp.Name, sp.Material, sp.Color, s.Cfg.StoreURL,
+			strconv.FormatBool(sp.AmbiguousUsage()),
+		).Set(sp.Used)
 	}
 
 	s.publishPrints(tasks)
@@ -268,11 +276,21 @@ func (s *Syncer) publishPrints(tasks []bambu.Task) {
 		if len(t.AMSDetailMapping) > 0 {
 			material = t.AMSDetailMapping[0].FilamentType
 		}
+		// The slicer plate description, e.g. "Two Plates, 0.2mm layer, 2
+		// walls, 20% infill". Distinct from the model name, and often what you
+		// actually want when comparing two runs of the same model. Empty when
+		// the task carries no separate design title.
+		profile := ""
+		if t.DesignTitle != "" && t.Title != t.DesignTitle {
+			profile = sanitise(t.Title)
+		}
 
-		s.Metrics.PrintInfo.WithLabelValues(
+		labels := []string{
 			strconv.FormatInt(t.ID, 10),
-			sanitise(name), url, date, statusLabel(t.Status), material,
-		).Set(t.Weight)
+			sanitise(name), url, date, statusLabel(t.Status), material, profile,
+		}
+		s.Metrics.PrintInfo.WithLabelValues(labels...).Set(t.Weight)
+		s.Metrics.PrintDurationSeconds.WithLabelValues(labels...).Set(float64(t.CostTime))
 	}
 }
 

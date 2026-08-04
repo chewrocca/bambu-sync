@@ -29,9 +29,11 @@ worth stating.
 | `bambu_print_probe_last_run_timestamp_seconds` | Last fast current-print poll |
 | `bambu_spool_remaining_grams` | Remaining filament per registered spool |
 | `bambu_spool_remaining_percent` | Same, as a percentage of capacity |
+| `bambu_spool_used_grams` | Lifetime consumption — **read the `ambiguous` label** |
 | `bambu_prints_succeeded` / `bambu_prints_failed` | Counts in fetched history |
 | `bambu_filter_hours` / `bambu_filter_percent` | Activated-carbon filter wear |
-| `bambu_print_info` | Recent prints; value is grams, labels carry model + URL |
+| `bambu_print_info` | Recent prints; value is grams, labels carry model, URL and slicer profile |
+| `bambu_print_duration_seconds` | Wall-clock duration, same labels as `bambu_print_info` |
 | `bambu_queue_item` | MakerWorld favourites; value is that design's print count |
 | `bambu_makerworld_favorites` | Count of favourites |
 
@@ -46,6 +48,17 @@ Print history reports only the broad material (`PLA`), never the variant
 therefore share one usage figure, and it belongs to the **group**, not to
 either spool. `bambu_spool_remaining_*` is per-spool and exact; consumption is
 not split. Attributing it to both would double-count.
+
+`bambu_spool_used_grams` carries an **`ambiguous`** label saying exactly this:
+
+```
+bambu_spool_used_grams{name="PLA Basic",color="#000000",ambiguous="true"} 884.91
+bambu_spool_used_grams{name="PLA Matte",color="#000000",ambiguous="true"} 884.91
+```
+
+Both report the group's 884.91 g, because there is no way to tell from the API
+which spool consumed what. **Do not `sum()` across spools without filtering on
+`ambiguous="false"`** — you would report 1770 g from 885 g of filament.
 
 ## Configuration
 
