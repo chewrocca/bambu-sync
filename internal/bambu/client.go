@@ -61,7 +61,7 @@ func (c *Client) get(ctx context.Context, token, path string, out any) error {
 	if err != nil {
 		return fmt.Errorf("bambu: GET %s: %w", path, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	switch resp.StatusCode {
 	case http.StatusOK:

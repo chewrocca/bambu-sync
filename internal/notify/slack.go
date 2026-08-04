@@ -90,7 +90,7 @@ func (s *Slack) Post(ctx context.Context, webhookURL string, alerts []Alert) err
 	if err != nil {
 		return fmt.Errorf("notify: post to webhook: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		// Deliberately does not include the URL — it is a credential.
 		return fmt.Errorf("notify: webhook returned status %d", resp.StatusCode)

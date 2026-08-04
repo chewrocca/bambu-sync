@@ -12,6 +12,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -26,6 +27,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/prometheus/common/expfmt"
 
 	"github.com/chewrocca/bambu-sync/internal/bambu"
 	"github.com/chewrocca/bambu-sync/internal/config"
@@ -90,8 +92,13 @@ func run(once, alerting bool, log *slog.Logger) error {
 	// means the UPSTREAM is broken, not this process — failing liveness on
 	// sync errors would turn an expired token into a CrashLoop, which is loud
 	// in exactly the wrong way. Sync health is bambu_sync_up and Slack.
-	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) { fmt.Fprintln(w, "ok") })
-	mux.HandleFunc("/ready", func(w http.ResponseWriter, _ *http.Request) { fmt.Fprintln(w, "ok") })
+	probe := func(w http.ResponseWriter, _ *http.Request) {
+		// A failed write to a probe response is the kubelet hanging up; there
+		// is nothing useful to do about it and nowhere useful to report it.
+		_, _ = io.WriteString(w, "ok\n")
+	}
+	mux.HandleFunc("/health", probe)
+	mux.HandleFunc("/ready", probe)
 
 	srv := &http.Server{Addr: cfg.ListenAddr, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 	go func() {
@@ -173,30 +180,11 @@ func dumpMetrics(g prometheus.Gatherer) error {
 	if err != nil {
 		return fmt.Errorf("gather metrics: %w", err)
 	}
-	enc := promhttp.HandlerFor(g, promhttp.HandlerOpts{})
-	_ = families
-	req, _ := http.NewRequest(http.MethodGet, "/metrics", nil)
-	rec := &stdoutRecorder{}
-	enc.ServeHTTP(rec, req)
-	return rec.err
-}
-
-type stdoutRecorder struct {
-	err    error
-	header http.Header
-}
-
-func (r *stdoutRecorder) Header() http.Header {
-	if r.header == nil {
-		r.header = http.Header{}
+	enc := expfmt.NewEncoder(os.Stdout, expfmt.NewFormat(expfmt.TypeTextPlain))
+	for _, mf := range families {
+		if err := enc.Encode(mf); err != nil {
+			return fmt.Errorf("encode %s: %w", mf.GetName(), err)
+		}
 	}
-	return r.header
+	return nil
 }
-func (r *stdoutRecorder) Write(b []byte) (int, error) {
-	n, err := os.Stdout.Write(b)
-	if err != nil && r.err == nil {
-		r.err = err
-	}
-	return n, err
-}
-func (r *stdoutRecorder) WriteHeader(int) {}

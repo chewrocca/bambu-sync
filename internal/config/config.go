@@ -198,6 +198,9 @@ func envDuration(key string, def time.Duration) (time.Duration, error) {
 // per-cycle rather than cached so that an External Secrets rotation is picked
 // up without a restart.
 func ReadSecret(path string) (string, error) {
+	// #nosec G304 -- the path is deployment configuration (a mounted Secret),
+	// not user input. Making it configurable is the point: it is what lets the
+	// same binary run under Kubernetes, Docker and locally without a rebuild.
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return "", fmt.Errorf("config: read secret %s: %w", path, err)

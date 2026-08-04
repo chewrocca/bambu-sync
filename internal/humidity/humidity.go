@@ -85,7 +85,7 @@ func (c *Client) Read(ctx context.Context) (r Reading, err error) {
 	if err != nil {
 		return Reading{}, fmt.Errorf("humidity: GET %s: %w", c.URL, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return Reading{}, fmt.Errorf("humidity: GET %s: status %d", c.URL, resp.StatusCode)
 	}

@@ -1,0 +1,46 @@
+version: "2"
+
+linters:
+  default: standard # errcheck, govet, ineffassign, staticcheck, unused
+  enable:
+    # Unhandled errors are the failure mode that matters most here: this talks
+    # to an undocumented API over the network, and a swallowed error would
+    # publish stale or zero metrics rather than reporting a problem.
+    - bodyclose
+    - errorlint # %w and errors.Is, not == comparison
+    - noctx # every outbound request must carry a context
+    - misspell
+    - unconvert
+    - wastedassign
+    - nilerr # returning nil after checking err != nil
+    - copyloopvar
+    - gocritic
+    - revive
+    - gosec
+
+  settings:
+    revive:
+      rules:
+        - name: exported
+          disabled: true # doc comments are checked by review, not by lint
+    gosec:
+      excludes:
+        # G104 duplicates errcheck.
+        - G104
+    gocritic:
+      disabled-checks:
+        # Comment formatting is deliberate throughout this repo: comments
+        # explain WHY, often in prose paragraphs.
+        - commentFormatting
+
+  exclusions:
+    rules:
+      # Test helpers legitimately ignore write errors on a fake server.
+      - path: _test\.go
+        linters:
+          - errcheck
+          - gosec
+
+formatters:
+  enable:
+    - gofmt
