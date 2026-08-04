@@ -34,6 +34,7 @@ import (
 	"github.com/chewrocca/bambu-sync/internal/humidity"
 	"github.com/chewrocca/bambu-sync/internal/metrics"
 	"github.com/chewrocca/bambu-sync/internal/notify"
+	"github.com/chewrocca/bambu-sync/internal/store"
 	"github.com/chewrocca/bambu-sync/internal/sync"
 )
 
@@ -80,6 +81,7 @@ func run(once, alerting bool, log *slog.Logger) error {
 		Metrics:  m,
 		Humidity: humidity.New(cfg.HumidityURL, cfg.HumidityMetric),
 		Slack:    notify.New(cfg.SlackUsername, cfg.SlackIconEmoji),
+		Store:    store.New(cfg.StoreURL),
 		Log:      log,
 	}
 

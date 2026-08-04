@@ -31,9 +31,11 @@ func (s *Syncer) buildAlerts(low []stock.Spool, hum humidity.Reading, humState s
 	if len(low) > 0 {
 		var b strings.Builder
 		for _, sp := range low {
-			fmt.Fprintf(&b, "• %s (%s) — %.0f g left\n", sp.Name, sp.Material, sp.Left)
+			// Link each spool to ITS product page. The point of the alert is
+			// that you can reorder from it without going looking.
+			fmt.Fprintf(&b, "• <%s|%s> (%s) — %.0f g left\n",
+				s.Store.URL(sp.Name), sp.Name, sp.Material, sp.Left)
 		}
-		fmt.Fprintf(&b, "→ <%s|Bambu Lab store>", s.Cfg.StoreURL)
 		alerts = append(alerts, notify.Alert{
 			Title: fmt.Sprintf("*Filament low* (%d at or below %.0f g)", len(low), s.Cfg.LowGrams),
 			Body:  b.String(),

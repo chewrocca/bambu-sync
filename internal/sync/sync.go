@@ -18,6 +18,7 @@ import (
 	"github.com/chewrocca/bambu-sync/internal/metrics"
 	"github.com/chewrocca/bambu-sync/internal/notify"
 	"github.com/chewrocca/bambu-sync/internal/stock"
+	"github.com/chewrocca/bambu-sync/internal/store"
 )
 
 // Syncer holds the collaborators a run needs. It is deliberately a value with
@@ -29,6 +30,7 @@ type Syncer struct {
 	Metrics  *metrics.Set
 	Humidity *humidity.Client
 	Slack    *notify.Slack
+	Store    store.Linker
 	Log      *slog.Logger
 
 	// prevFailed is the previous run's failed-print count, held in memory.
@@ -231,12 +233,16 @@ func (s *Syncer) publish(spools []stock.Spool, tasks []bambu.Task, favs []bambu.
 	s.Metrics.ResetDynamic()
 
 	for _, sp := range spools {
+		// Per-product link, not the store root: a spool running low should
+		// link to the thing you would actually reorder.
+		link := s.Store.URL(sp.Name)
+
 		s.Metrics.SpoolRemainingGrams.WithLabelValues(
-			sp.Name, sp.Material, sp.Color, s.Cfg.StoreURL,
+			sp.Name, sp.Material, sp.Color, link,
 		).Set(sp.Left)
 
 		s.Metrics.SpoolRemainingPercent.WithLabelValues(
-			sp.Name, sp.Material, sp.Color, s.Cfg.StoreURL,
+			sp.Name, sp.Material, sp.Color, link,
 			strconv.FormatFloat(sp.Left, 'f', -1, 64),
 			strconv.FormatFloat(sp.Capacity, 'f', -1, 64),
 			strconv.FormatBool(sp.Loaded),
@@ -253,7 +259,7 @@ func (s *Syncer) publish(spools []stock.Spool, tasks []bambu.Task, favs []bambu.
 		s.Metrics.SpoolDepleted.WithLabelValues(sp.Name, sp.Material, sp.Color).Set(depleted)
 
 		s.Metrics.SpoolUsedGrams.WithLabelValues(
-			sp.Name, sp.Material, sp.Color, s.Cfg.StoreURL,
+			sp.Name, sp.Material, sp.Color, link,
 			strconv.FormatBool(sp.AmbiguousUsage()),
 		).Set(sp.Used)
 	}

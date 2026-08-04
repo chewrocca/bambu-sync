@@ -61,6 +61,14 @@ Days remaining: `(bambu_token_expires_timestamp_seconds - time()) / 86400`
 | `bambu_spool_used_grams` | gauge | `name` `material` `color` `store` **`ambiguous`** | Lifetime consumption — **read the caveat** |
 | `bambu_spool_depleted` | gauge | `name` `material` `color` | 1 = a finished roll |
 
+The `store` label is the **product page for that filament**, not a shop front —
+so a low-filament panel or alert links straight to what you would reorder. The
+slugs are verified against the store, not guessed: `PLA Silk+` is
+`pla-silk-upgrade` (not `pla-silk-multi-color`, a different product), `PLA
+Basic` is `pla-basic-filament`, `ABS` is `abs-filament`. An unrecognised
+filament falls back to the filament *collection*, never to a guessed slug.
+Set `BAMBU_STORE_URL` for a non-US storefront; the slugs are the same.
+
 ### ⚠️ `bambu_spool_used_grams` is not always summable
 
 Print history reports only the **broad material** (`PLA`), never the variant

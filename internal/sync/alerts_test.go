@@ -48,7 +48,11 @@ func TestBuildAlertsSilentWhenNothingWrong(t *testing.T) {
 	}
 }
 
-func TestBuildAlertsLowFilamentNamesEverySpoolAndLinksTheStore(t *testing.T) {
+// Each low spool must link to ITS OWN product page. Linking them all at the
+// store root -- which an earlier version of the Go rewrite did, losing
+// behaviour the bash implementation had -- makes the alert something you have
+// to act on twice.
+func TestBuildAlertsLowFilamentLinksEachSpoolToItsProduct(t *testing.T) {
 	s := testSyncer(t, "")
 	low := []stock.Spool{
 		{Name: "PLA Basic", Material: "PLA", Left: 200},
@@ -58,9 +62,14 @@ func TestBuildAlertsLowFilamentNamesEverySpoolAndLinksTheStore(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("want 1 alert, got %d", len(got))
 	}
-	for _, want := range []string{"PLA Basic", "PETG Basic", "200", "120", s.Cfg.StoreURL} {
-		if !strings.Contains(got[0].Title+got[0].Body, want) {
-			t.Errorf("alert missing %q:\n%s\n%s", want, got[0].Title, got[0].Body)
+	body := got[0].Title + got[0].Body
+	for _, want := range []string{
+		"PLA Basic", "PETG Basic", "200", "120",
+		"/products/pla-basic-filament", // not the store root
+		"/products/petg-basic",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("alert missing %q:\n%s", want, body)
 		}
 	}
 }
