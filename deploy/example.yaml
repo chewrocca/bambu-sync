@@ -1,0 +1,102 @@
+# Example deployment. Generic on purpose — adapt namespace, image tag, secret
+# management and scrape mechanism to your cluster.
+#
+# The Secret below is a placeholder. Use whatever you already use (External
+# Secrets, Sealed Secrets, SOPS); the only requirement is that the token and
+# its expiry date arrive as FILES, because the process re-reads them every
+# cycle so a rotation lands without a restart.
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: bambu-sync
+type: Opaque
+stringData:
+  # Bearer token from an interactive login. Opaque string, ~3 month lifetime,
+  # no working refresh endpoint.
+  token: "REPLACE_ME"
+  # The token is NOT a JWT, so its expiry cannot be decoded from it. This comes
+  # from the login response's expiresIn. Update it whenever you rotate the
+  # token, or the exporter will warn against a stale date.
+  expires: "2026-10-30"
+  # Optional; only needed when SLACK_ALERTS_ENABLED=true.
+  slack-webhook: "REPLACE_ME"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bambu-sync
+  labels: {app: bambu-sync}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: bambu-sync}
+  template:
+    metadata:
+      labels: {app: bambu-sync}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: bambu-sync
+          image: ghcr.io/chewrocca/bambu-sync:v0.1.0
+          args: []
+          ports:
+            - name: metrics
+              containerPort: 9110
+          env:
+            - name: TZ
+              value: America/Chicago
+            - name: SYNC_DAILY_AT
+              value: "07:00"
+            # Humidity is not in the cloud API. Point this at a LAN MQTT
+            # exporter's /metrics if you run one; leave unset to disable.
+            - name: HUMIDITY_METRICS_URL
+              value: "http://bambulab-exporter:9109/metrics"
+            # Explicit rather than inferred from the webhook's presence — that
+            # would conflate "deliberately off" with "misconfigured".
+            - name: SLACK_ALERTS_ENABLED
+              value: "false"
+          volumeMounts:
+            - name: secrets
+              mountPath: /etc/bambu
+              readOnly: true
+          # Probes cover the HTTP server only. A dead Bambu token means the
+          # UPSTREAM is broken, not this process — failing liveness on sync
+          # errors would turn an expired token into a CrashLoop. Sync health is
+          # bambu_sync_up plus alerting.
+          readinessProbe:
+            httpGet: {path: /ready, port: metrics}
+            initialDelaySeconds: 5
+          livenessProbe:
+            httpGet: {path: /health, port: metrics}
+            initialDelaySeconds: 10
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
+          resources:
+            requests: {cpu: 10m, memory: 64Mi}
+            limits: {memory: 256Mi}
+      volumes:
+        - name: secrets
+          secret:
+            secretName: bambu-sync
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: bambu-sync
+  labels: {app: bambu-sync}
+  # Adapt to your scrape mechanism. These annotations suit Grafana Alloy's
+  # annotation autodiscovery; a ServiceMonitor works equally well.
+  annotations:
+    k8s.grafana.com/scrape: "true"
+    k8s.grafana.com/metrics.portNumber: "9110"
+spec:
+  selector: {app: bambu-sync}
+  ports:
+    - name: metrics
+      port: 9110
+      targetPort: metrics
