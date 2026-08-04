@@ -94,6 +94,13 @@ func (s *Syncer) run(ctx context.Context, opts Options) error {
 	if err != nil {
 		return s.handleFetchErr(ctx, "favorites", err, opts)
 	}
+	// Best-effort: this is identity and reachability, not the reason the
+	// exporter exists. A failure here must not lose the sync.
+	devices, devErr := s.Client.Devices(ctx, token)
+	if devErr != nil {
+		s.Log.Warn("device list unavailable", "err", devErr)
+		devices = &bambu.BindResponse{}
+	}
 
 	spools := stock.Join(fil.Hits, tasks.Hits)
 	low := stock.Low(spools, s.Cfg.LowGrams)
@@ -107,7 +114,7 @@ func (s *Syncer) run(ctx context.Context, opts Options) error {
 	}
 	humState := hum.State(s.Cfg.HumidityWarn, s.Cfg.HumidityCrit)
 
-	s.publish(spools, tasks.Hits, favs.Hits, succeeded, failed, filterHrs, filterPct)
+	s.publish(spools, tasks.Hits, favs.Hits, devices.Devices, succeeded, failed, filterHrs, filterPct)
 
 	var alerts []notify.Alert
 	if opts.Alerting {
@@ -133,6 +140,8 @@ func (s *Syncer) run(ctx context.Context, opts Options) error {
 		"humidity_percent", hum.Percent,
 		"humidity_state", humState,
 		"favorites", len(favs.Hits),
+		"devices", len(devices.Devices),
+		"filament_grams_total", stock.TotalFilamentGrams(tasks.Hits),
 		"alerts_fired", len(alerts),
 		"alerting_enabled", opts.Alerting,
 	)
@@ -214,7 +223,7 @@ func (s *Syncer) publishTokenExpiry() {
 }
 
 func (s *Syncer) publish(spools []stock.Spool, tasks []bambu.Task, favs []bambu.Design,
-	succeeded, failed int, filterHrs, filterPct float64) {
+	devices []bambu.Device, succeeded, failed int, filterHrs, filterPct float64) {
 
 	s.Metrics.ResetDynamic()
 
@@ -249,6 +258,26 @@ func (s *Syncer) publish(spools []stock.Spool, tasks []bambu.Task, favs []bambu.
 			sanitise(creatorOr(d, "?")),
 		).Set(float64(d.PrintCount))
 	}
+
+	for _, d := range devices {
+		// Deliberately NOT carrying d.DevAccessCode -- it is not even mapped
+		// on the struct. See bambu.Device.
+		s.Metrics.DeviceInfo.WithLabelValues(
+			sanitise(d.Name), d.DevID, d.ProductName, d.ModelName, d.Structure,
+		).Set(1)
+		online := 0.0
+		if d.Online {
+			online = 1
+		}
+		s.Metrics.DeviceOnline.WithLabelValues(sanitise(d.Name), d.DevID).Set(online)
+	}
+
+	// Aggregates over the FULL history, not just the 20 published above.
+	for _, m := range stock.ByMaterial(tasks) {
+		s.Metrics.PrintsByMaterial.WithLabelValues(m.Material).Set(float64(m.Prints))
+		s.Metrics.FilamentUsedGrams.WithLabelValues(m.Material).Set(m.Grams)
+	}
+	s.Metrics.FilamentGramsAll.Set(stock.TotalFilamentGrams(tasks))
 
 	s.Metrics.Favorites.Set(float64(len(favs)))
 	s.Metrics.PrintsSucceeded.Set(float64(succeeded))

@@ -107,3 +107,13 @@ func (c *Client) Favorites(ctx context.Context, token string, limit int) (*Favor
 	err := c.get(ctx, token, path, &out)
 	return &out, err
 }
+
+// Devices fetches the account's bound printers.
+//
+// Cheap (one call, one device for most accounts) and the only source of an
+// accurate model name — see the BindResponse doc comment.
+func (c *Client) Devices(ctx context.Context, token string) (*BindResponse, error) {
+	var out BindResponse
+	err := c.get(ctx, token, "/iot-service/api/user/bind", &out)
+	return &out, err
+}

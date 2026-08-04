@@ -203,3 +203,67 @@ func FilterHours(tasks []bambu.Task, intervalHours float64) (hours, percent floa
 	}
 	return
 }
+
+// MaterialUsage aggregates print history by material.
+//
+// This costs no extra API call: the full task list is already fetched (100 by
+// default) and then capped at 20 for bambu_print_info, because every print is
+// a distinct label set. These aggregates run over ALL of it and collapse to
+// one series per material — a handful, not a hundred — so the detail that the
+// cardinality cap throws away is recovered for free.
+type MaterialUsage struct {
+	Material string
+	Prints   int     // prints that used this material at all
+	Grams    float64 // total consumed
+}
+
+// ByMaterial returns per-material totals, most-used first.
+//
+// A print using two materials counts once against each — these are "how often
+// do I reach for PETG", not a partition of the print count.
+func ByMaterial(tasks []bambu.Task) []MaterialUsage {
+	grams := map[string]float64{}
+	prints := map[string]int{}
+
+	for _, t := range tasks {
+		seen := map[string]bool{}
+		for _, d := range t.AMSDetailMapping {
+			m := d.FilamentType
+			if m == "" {
+				m = "?"
+			}
+			grams[m] += d.Weight
+			if !seen[m] {
+				seen[m] = true
+				prints[m]++
+			}
+		}
+	}
+
+	out := make([]MaterialUsage, 0, len(grams))
+	for m, g := range grams {
+		out = append(out, MaterialUsage{Material: m, Prints: prints[m], Grams: g})
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].Grams != out[j].Grams {
+			return out[i].Grams > out[j].Grams
+		}
+		return out[i].Material < out[j].Material
+	})
+	return out
+}
+
+// TotalFilamentGrams is lifetime consumption across the fetched history.
+//
+// Safe to sum, unlike per-spool usage: this aggregates PRINTS, so the
+// colour+material ambiguity that makes bambu_spool_used_grams unsummable does
+// not arise. Each gram is counted once, by the job that consumed it.
+func TotalFilamentGrams(tasks []bambu.Task) float64 {
+	var total float64
+	for _, t := range tasks {
+		for _, d := range t.AMSDetailMapping {
+			total += d.Weight
+		}
+	}
+	return total
+}

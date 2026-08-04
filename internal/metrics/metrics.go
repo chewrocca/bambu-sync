@@ -34,6 +34,12 @@ type Set struct {
 	PrintInfo             *prometheus.GaugeVec
 	QueueItem             *prometheus.GaugeVec
 	Favorites             prometheus.Gauge
+
+	DeviceInfo        *prometheus.GaugeVec
+	DeviceOnline      *prometheus.GaugeVec
+	PrintsByMaterial  *prometheus.GaugeVec
+	FilamentUsedGrams *prometheus.GaugeVec
+	FilamentGramsAll  prometheus.Gauge
 }
 
 // New registers the metric surface against reg.
@@ -99,10 +105,45 @@ func New(reg prometheus.Registerer) *Set {
 		PrintDurationSeconds: f.gaugeVec("bambu_print_duration_seconds",
 			"Wall-clock duration of each recent print.",
 			[]string{"id", "name", "url", "date", "status", "material", "profile"}),
+		// The ONLY accurate model identification available. The LAN MQTT
+		// payload carries no module list and a null print.sn, so MQTT
+		// exporters fall through to a legacy device.type table where the
+		// X2D's type == 1 is already claimed by the X1C -- an X2D is reported
+		// as an X1C. The cloud API simply says "X2D".
+		//
+		// dev_access_code is NOT and must never be a label: it is the
+		// printer's LAN credential, and a label would put it in Grafana Cloud
+		// in plaintext, indexed, indefinitely.
+		DeviceInfo: f.gaugeVec("bambu_device_info",
+			"Bound printer identity from the cloud account. Always 1.",
+			[]string{"name", "serial", "product_name", "model_name", "structure"}),
+		// Cloud-side reachability, which is a DIFFERENT question from the MQTT
+		// exporter's bambulab_printer_up: that says "can I reach it on the
+		// LAN". Together they separate "the printer is off" from "my network
+		// is broken".
+		DeviceOnline: f.gaugeVec("bambu_device_online",
+			"1 if Bambu's cloud considers the printer online.",
+			[]string{"name", "serial"}),
+
+		// Aggregates over the FULL fetched history, not the 20 published as
+		// bambu_print_info. They cost no extra API call and collapse to one
+		// series per material, so they recover detail the cardinality cap
+		// throws away.
+		PrintsByMaterial: f.gaugeVec("bambu_prints_by_material",
+			"Prints that used this material. A multi-material print counts once per material.",
+			[]string{"material"}),
+		FilamentUsedGrams: f.gaugeVec("bambu_filament_used_grams",
+			"Filament consumed per material across the fetched print history.",
+			[]string{"material"}),
+
 		QueueItem: f.gaugeVec("bambu_queue_item",
 			"MakerWorld favourites, i.e. the print queue. Value is that design's print count.",
 			[]string{"name", "url", "creator"}),
 	}
+	// Safe to sum, unlike bambu_spool_used_grams: this aggregates PRINTS, so
+	// the colour+material ambiguity never arises and each gram is counted once.
+	s.FilamentGramsAll = f.gauge("bambu_filament_used_grams_total",
+		"Total filament consumed across the fetched print history.")
 	return s
 }
 
@@ -114,6 +155,10 @@ func (s *Set) ResetDynamic() {
 	s.SpoolRemainingPercent.Reset()
 	s.SpoolUsedGrams.Reset()
 	s.QueueItem.Reset()
+	s.DeviceInfo.Reset()
+	s.DeviceOnline.Reset()
+	s.PrintsByMaterial.Reset()
+	s.FilamentUsedGrams.Reset()
 	s.ResetPrintInfo()
 }
 

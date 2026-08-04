@@ -171,3 +171,48 @@ func TestSlotStringHandlesBothShapes(t *testing.T) {
 		}
 	}
 }
+
+// A print using two materials counts once against EACH -- these answer "how
+// often do I reach for PETG", not "partition my prints".
+func TestByMaterialCountsMultiMaterialPrintsOnce(t *testing.T) {
+	tasks := []bambu.Task{
+		{AMSDetailMapping: []bambu.AMSDetail{
+			{FilamentType: "PLA", Weight: 100},
+			{FilamentType: "PETG", Weight: 50},
+			{FilamentType: "PLA", Weight: 25}, // same material, two slots
+		}},
+		{AMSDetailMapping: []bambu.AMSDetail{{FilamentType: "PLA", Weight: 10}}},
+	}
+
+	got := ByMaterial(tasks)
+	by := map[string]MaterialUsage{}
+	for _, u := range got {
+		by[u.Material] = u
+	}
+
+	if by["PLA"].Prints != 2 {
+		t.Errorf("PLA prints = %d, want 2 (two slots in one print is still one print)", by["PLA"].Prints)
+	}
+	if by["PLA"].Grams != 135 {
+		t.Errorf("PLA grams = %v, want 135", by["PLA"].Grams)
+	}
+	if by["PETG"].Prints != 1 || by["PETG"].Grams != 50 {
+		t.Errorf("PETG = %+v, want 1 print / 50 g", by["PETG"])
+	}
+	if got[0].Material != "PLA" {
+		t.Errorf("want most-used first, got %q", got[0].Material)
+	}
+}
+
+// Unlike per-spool usage, this IS safe to sum: it aggregates prints, so the
+// colour+material ambiguity never arises. Each gram is counted once.
+func TestTotalFilamentGrams(t *testing.T) {
+	tasks := []bambu.Task{
+		{AMSDetailMapping: []bambu.AMSDetail{{Weight: 100}, {Weight: 50}}},
+		{AMSDetailMapping: []bambu.AMSDetail{{Weight: 25}}},
+		{}, // a print with no AMS detail must not break the sum
+	}
+	if got := TotalFilamentGrams(tasks); got != 175 {
+		t.Errorf("TotalFilamentGrams = %v, want 175", got)
+	}
+}

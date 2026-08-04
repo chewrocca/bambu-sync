@@ -36,6 +36,23 @@ worth stating.
 | `bambu_print_duration_seconds` | Wall-clock duration, same labels as `bambu_print_info` |
 | `bambu_queue_item` | MakerWorld favourites; value is that design's print count |
 | `bambu_makerworld_favorites` | Count of favourites |
+| `bambu_device_info` | Printer identity — **the only accurate model source**, see below |
+| `bambu_device_online` | 1 if Bambu's cloud considers the printer online |
+| `bambu_prints_by_material` | Prints per material across the full fetched history |
+| `bambu_filament_used_grams` / `_total` | Filament consumed, per material and overall |
+
+### The cloud is the only place the printer is named correctly
+
+`bambu_device_info` carries `product_name` — `"X2D"` on the printer this was
+built against. That matters because the **LAN MQTT payload cannot express it**:
+it carries no `module` list and a null `print.sn`, so MQTT exporters fall
+through to a legacy `device.type` table where the X2D's `type == 1` is already
+claimed by the X1C. They report an X2D as an X1C. The cloud API just says X2D.
+
+> **`dev_access_code` is deliberately not carried.** The API returns the
+> printer's LAN credential on every device. It is not mapped onto the struct at
+> all — not mapped-and-unused — so it is discarded at unmarshal and can never
+> reach a metric label. A test enforces this.
 
 **Only RFID-registered spools appear.** Sealed spares are invisible to the API,
 so "nothing running low" means nothing low *among what has been loaded*.

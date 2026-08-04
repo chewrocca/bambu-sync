@@ -76,3 +76,31 @@ type Design struct {
 		Name string `json:"name"`
 	} `json:"designCreator"`
 }
+
+// BindResponse is GET /iot-service/api/user/bind — the account's device list.
+//
+// This is the only place the printer is correctly identified. The LAN MQTT
+// payload carries no `module` list and a null `print.sn`, so MQTT exporters
+// fall through to a legacy `device.type` table where the X2D's type == 1 is
+// already claimed by the X1C. The cloud simply says "X2D".
+type BindResponse struct {
+	Devices []Device `json:"devices"`
+}
+
+// Device is one bound printer.
+//
+// NOTE: the API also returns `dev_access_code` — the printer's LAN access
+// code. It is deliberately NOT mapped here. It is a credential: it lives in
+// 1Password and reaches the MQTT exporter via ExternalSecret, and a metric
+// label would put it into Grafana Cloud in plaintext, indexed, effectively
+// forever. There is no use for it in this exporter, so it is not carried at
+// all rather than carried-and-not-used.
+type Device struct {
+	DevID          string  `json:"dev_id"`           // serial
+	Name           string  `json:"name"`             // user-assigned
+	ProductName    string  `json:"dev_product_name"` // "X2D" — the accurate one
+	ModelName      string  `json:"dev_model_name"`   // internal code, e.g. "N6-V2"
+	Structure      string  `json:"dev_structure"`    // e.g. "CoreXY"
+	NozzleDiameter float64 `json:"nozzle_diameter"`
+	Online         bool    `json:"online"`
+}
