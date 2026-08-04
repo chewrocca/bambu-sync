@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/prometheus/common/expfmt"
+	"github.com/prometheus/common/model"
 )
 
 // Reading is an AMS humidity sample.
@@ -61,10 +62,20 @@ func New(url, metric string) *Client {
 //
 // Errors are returned rather than swallowed, but callers should treat this as
 // best-effort — the sync is still useful without humidity.
-func (c *Client) Read(ctx context.Context) (Reading, error) {
+func (c *Client) Read(ctx context.Context) (r Reading, err error) {
 	if c.URL == "" {
 		return Reading{}, nil
 	}
+
+	// This read is best-effort by design: the sync is still useful without
+	// humidity. Enforce that against panics, not just errors — a panic in the
+	// parser previously killed the whole process through the ticker goroutine,
+	// turning an optional reading into a CrashLoopBackOff.
+	defer func() {
+		if p := recover(); p != nil {
+			r, err = Reading{}, fmt.Errorf("humidity: parser panicked: %v", p)
+		}
+	}()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.URL, nil)
 	if err != nil {
@@ -79,7 +90,13 @@ func (c *Client) Read(ctx context.Context) (Reading, error) {
 		return Reading{}, fmt.Errorf("humidity: GET %s: status %d", c.URL, resp.StatusCode)
 	}
 
-	families, err := (&expfmt.TextParser{}).TextToMetricFamilies(resp.Body)
+	// MUST go through NewTextParser. TextParser.scheme is unexported and its
+	// zero value is model.UnsetValidation, which PANICS inside
+	// IsValidMetricName on the first metric line — a zero-value
+	// &expfmt.TextParser{} is broken by construction in prometheus/common
+	// v0.70.x. Caught by CrashLoopBackOff on the first real deploy.
+	parser := expfmt.NewTextParser(model.UTF8Validation)
+	families, err := parser.TextToMetricFamilies(resp.Body)
 	if err != nil {
 		return Reading{}, fmt.Errorf("humidity: parse exposition: %w", err)
 	}
