@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/chewrocca/bambu-sync/internal/bambu"
 	"github.com/chewrocca/bambu-sync/internal/config"
 	"github.com/chewrocca/bambu-sync/internal/humidity"
@@ -180,7 +182,17 @@ func (s *Syncer) RunFast(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("sync: fast poll: %w", err)
 	}
-	s.Metrics.ResetPrintInfo()
+	// Delete ONLY the running series, never the whole set. The full sync
+	// publishes the last 20 prints; a blanket reset here would collapse the
+	// history to the single task this poll fetched -- which is exactly what
+	// happened on the first deploy, 30 minutes after every full sync.
+	//
+	// Deleting the running series first is still necessary: when a print
+	// finishes, its status label changes, and the stale status="running"
+	// series would otherwise linger until the next daily sync.
+	running := prometheus.Labels{"status": "running"}
+	s.Metrics.PrintInfo.DeletePartialMatch(running)
+	s.Metrics.PrintDurationSeconds.DeletePartialMatch(running)
 	s.publishPrints(tasks.Hits)
 	s.Metrics.ProbeLastRun.Set(float64(time.Now().Unix()))
 	return nil

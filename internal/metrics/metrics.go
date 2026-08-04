@@ -117,7 +117,10 @@ func (s *Set) ResetDynamic() {
 	s.ResetPrintInfo()
 }
 
-// ResetPrintInfo clears the per-print series, for the fast poll.
+// ResetPrintInfo clears every per-print series. Only the FULL sync may call
+// this: it republishes the last 20 prints immediately afterwards. The fast
+// poll fetches a single task, so a reset there would collapse the history to
+// one row -- use DeletePartialMatch on status="running" instead.
 func (s *Set) ResetPrintInfo() {
 	s.PrintInfo.Reset()
 	s.PrintDurationSeconds.Reset()
