@@ -3,6 +3,9 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"regexp"
+	"sort"
+	"strings"
 	"testing"
 	"time"
 )
@@ -138,5 +141,108 @@ func TestPprofDefaultsOff(t *testing.T) {
 	}
 	if !c.PprofEnabled {
 		t.Error("ENABLE_PPROF=true should enable it")
+	}
+}
+
+// The defaults TestLoadDefaults did not cover. These are not decoration:
+// the three secret paths are the container contract -- they must match the
+// volumeMount in deploy/example.yaml and in the GitOps manifests, and a
+// silent change to one strands a running pod on a file that is not there.
+func TestLoadStringDefaults(t *testing.T) {
+	c, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct{ name, got, want string }{
+		// Secret paths. Files, not env values, so a rotated Kubernetes Secret
+		// is picked up without a restart.
+		{"TokenFile", c.TokenFile, "/etc/bambu/token"},
+		{"TokenExpiryFile", c.TokenExpiryFile, "/etc/bambu/expires"},
+		{"SlackWebhookFile", c.SlackWebhookFile, "/etc/bambu/slack-webhook"},
+
+		// The /v1 is mandatory; without it every endpoint 404s.
+		{"BaseURL", c.BaseURL, "https://api.bambulab.com/v1"},
+
+		// Regional storefront. The slugs are global, the host is not.
+		{"StoreURL", c.StoreURL, "https://us.store.bambulab.com"},
+
+		{"HumidityMetric", c.HumidityMetric, "bambulab_ams_unit_humidity"},
+		{"ListenAddr", c.ListenAddr, ":9110"},
+		{"SlackUsername", c.SlackUsername, "Bambu Sync"},
+		{"SlackIconEmoji", c.SlackIconEmoji, ":printer:"},
+	} {
+		if tc.got != tc.want {
+			t.Errorf("%s = %q, want %q", tc.name, tc.got, tc.want)
+		}
+	}
+
+	// Humidity is opt-in: an unset URL disables the whole best-effort read
+	// rather than defaulting to some guessed exporter address.
+	if c.HumidityURL != "" {
+		t.Errorf("HumidityURL must default to empty (disabled), got %q", c.HumidityURL)
+	}
+}
+
+// HistoryLimit had NO assertion anywhere, despite being the field the
+// documented bargain rests on: bambu_print_info is capped at 20 for
+// cardinality, and the aggregates recover the discarded detail by running over
+// the full fetched history.
+//
+// The limit is applied at FETCH time, so the publish tests cannot catch this —
+// they assert that publish aggregates everything it is handed, not that it is
+// handed 100. Shrink this default and every total silently drops while the
+// whole suite stays green.
+func TestHistoryLimitDefaultsWellAboveThePublishedCap(t *testing.T) {
+	c, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.HistoryLimit != 100 {
+		t.Errorf("HISTORY_LIMIT = %d, want 100", c.HistoryLimit)
+	}
+	if c.HistoryLimit <= c.PrintInfoLimit {
+		t.Errorf("history (%d) must exceed the published cap (%d), or the "+
+			"aggregates add nothing the capped list does not already show",
+			c.HistoryLimit, c.PrintInfoLimit)
+	}
+	if c.FullInterval != 24*time.Hour {
+		t.Errorf("SYNC_FULL_INTERVAL = %v, want 24h", c.FullInterval)
+	}
+}
+
+// Every environment variable the code honours must appear in the README's
+// configuration table. Three did not — HISTORY_LIMIT, SYNC_FULL_INTERVAL and
+// BAMBU_STORE_URL — which makes them knobs you can only discover by reading
+// the source. This test is the reason that cannot happen again.
+func TestEveryEnvVarIsDocumented(t *testing.T) {
+	src, err := os.ReadFile("config.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	readme, err := os.ReadFile(filepath.Join("..", "..", "README.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Matches env("X", …), envBool("X", …), envInt("X", …), and friends.
+	re := regexp.MustCompile(`env(?:Bool|Float|Int|Duration)?\("([A-Z][A-Z0-9_]*)"`)
+	seen := map[string]bool{}
+	for _, m := range re.FindAllStringSubmatch(string(src), -1) {
+		seen[m[1]] = true
+	}
+	if len(seen) < 10 {
+		t.Fatalf("only found %d env vars in config.go; the matcher is broken", len(seen))
+	}
+
+	var undocumented []string
+	for name := range seen {
+		if !strings.Contains(string(readme), name) {
+			undocumented = append(undocumented, name)
+		}
+	}
+	sort.Strings(undocumented)
+	if len(undocumented) > 0 {
+		t.Errorf("environment variables absent from README.md: %s",
+			strings.Join(undocumented, ", "))
 	}
 }

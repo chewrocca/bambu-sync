@@ -83,6 +83,9 @@ rotated Kubernetes Secret is picked up without a restart.
 | `HUMIDITY_METRIC_NAME` | `bambulab_ams_unit_humidity` | |
 | `SYNC_DAILY_AT` | `07:00` | Local time, honours `TZ` across DST |
 | `SYNC_FAST_INTERVAL` | `30m` | Current-print refresh |
+| `SYNC_FULL_INTERVAL` | `24h` | Fallback cadence — see below |
+| `BAMBU_STORE_URL` | `https://us.store.bambulab.com` | Regional storefront for product links |
+| `HISTORY_LIMIT` | `100` | Prints **fetched**; aggregates span all of them |
 | `LOW_GRAMS` | `250` | Reorder threshold |
 | `HUMIDITY_WARN` / `HUMIDITY_CRIT` | `30` / `45` | % RH |
 | `FILTER_INTERVAL_HOURS` | `1440` | |
@@ -98,6 +101,18 @@ a condition that is fine.
 
 `FAVORITES_LIMIT` and `PRINT_INFO_LIMIT` are cardinality caps, not display
 limits. Every entry is a distinct label set and both lists only grow.
+
+`HISTORY_LIMIT` is a different thing again: it is how many prints are
+**fetched**, and the per-material aggregates run over all of them. That is how
+the detail `PRINT_INFO_LIMIT` discards is recovered without a second API call
+— so lowering it silently shrinks every total while the exposition still looks
+healthy. Keep it well above `PRINT_INFO_LIMIT` or the aggregates tell you
+nothing the capped list does not already show.
+
+> `SYNC_FULL_INTERVAL` is currently **unreachable**. It is the fallback used
+> when `SYNC_DAILY_AT` cannot be parsed, but startup rejects an unparseable
+> value outright, so the process never reaches the fallback. Documented
+> because the code honours it, not because it does anything today.
 
 ## Authentication
 
