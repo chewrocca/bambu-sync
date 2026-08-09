@@ -39,6 +39,14 @@ type Syncer struct {
 	// replaces ("expect one spurious alert the first time").
 	prevFailed int
 	seeded     bool
+
+	// lastTasks is the most recent FULL sync's print history, kept so the fast
+	// poll can re-derive per-spool usage without refetching it. See
+	// refreshSpools.
+	//
+	// Not guarded: loop() drives the full and fast cadences from a single
+	// select, so the two never run concurrently.
+	lastTasks []bambu.Task
 }
 
 // Options controls a single run.
@@ -89,6 +97,9 @@ func (s *Syncer) run(ctx context.Context, opts Options) error {
 	if err != nil {
 		return s.handleFetchErr(ctx, "tasks", err, opts)
 	}
+	// Cached before the remaining fetches, so a later failure still leaves the
+	// fast poll a usable history to attribute spool usage against.
+	s.lastTasks = tasks.Hits
 	fil, err := s.Client.Filament(ctx, token)
 	if err != nil {
 		return s.handleFetchErr(ctx, "filament", err, opts)
@@ -208,8 +219,43 @@ func (s *Syncer) RunFast(ctx context.Context) error {
 	s.Metrics.PrintInfo.DeletePartialMatch(running)
 	s.Metrics.PrintDurationSeconds.DeletePartialMatch(running)
 	s.publishPrints(tasks.Hits)
+	s.refreshSpools(ctx, token)
 	s.Metrics.ProbeLastRun.Set(float64(time.Now().Unix()))
 	return nil
+}
+
+// refreshSpools republishes spool state on the fast cadence.
+//
+// Remaining weight and AMS slot allocation are the two things that actually
+// move between daily syncs -- move a spool at noon and a daily-only exporter
+// shows the old slot until tomorrow. The filament endpoint is one unpaginated
+// GET, so this doubles the fast poll from one request to two: 96 a day at the
+// 30-minute default, against an API whose limits are undocumented but which
+// this is nowhere near.
+//
+// Best-effort by the same reasoning as devices and humidity in the full sync:
+// the current-print refresh is why this poll exists, and a filament hiccup
+// must not take it down with it.
+func (s *Syncer) refreshSpools(ctx context.Context, token string) {
+	// Usage is derived from print history, and this poll deliberately fetches
+	// ONE task. Re-join against the last full sync's history instead: lifetime
+	// consumption moves slowly, so a day-old Used beside a fresh weight and
+	// slot is the right trade -- and refetching 100 tasks every cycle is
+	// exactly the expensive call this cadence exists to avoid.
+	//
+	// With no history cached yet, publish nothing. Every spool would report
+	// Used=0, which reads as "never printed" rather than as "not known yet" --
+	// and stale-but-true beats fresh-and-wrong.
+	if s.lastTasks == nil {
+		return
+	}
+	fil, err := s.Client.Filament(ctx, token)
+	if err != nil {
+		s.Metrics.APIErrors.WithLabelValues("filament").Inc()
+		s.Log.Warn("fast spool refresh unavailable", "err", err)
+		return
+	}
+	s.publishSpools(stock.Join(fil.Hits, s.lastTasks))
 }
 
 func (s *Syncer) publishTokenExpiry() {
@@ -231,6 +277,55 @@ func (s *Syncer) publish(spools []stock.Spool, tasks []bambu.Task, favs []bambu.
 	devices []bambu.Device, succeeded, failed int, filterHrs, filterPct float64) {
 
 	s.Metrics.ResetDynamic()
+	s.publishSpools(spools)
+	s.publishPrints(tasks)
+
+	for _, d := range favs {
+		s.Metrics.QueueItem.WithLabelValues(
+			sanitise(d.Title),
+			fmt.Sprintf("https://makerworld.com/en/models/%d", d.ID),
+			sanitise(creatorOr(d, "?")),
+		).Set(float64(d.PrintCount))
+	}
+
+	for _, d := range devices {
+		// Deliberately NOT carrying d.DevAccessCode -- it is not even mapped
+		// on the struct. See bambu.Device.
+		s.Metrics.DeviceInfo.WithLabelValues(
+			sanitise(d.Name), d.DevID, d.ProductName, d.ModelName, d.Structure,
+		).Set(1)
+		online := 0.0
+		if d.Online {
+			online = 1
+		}
+		s.Metrics.DeviceOnline.WithLabelValues(sanitise(d.Name), d.DevID).Set(online)
+	}
+
+	// Aggregates over the FULL history, not just the 20 published above.
+	for _, m := range stock.ByMaterial(tasks) {
+		s.Metrics.PrintsByMaterial.WithLabelValues(m.Material).Set(float64(m.Prints))
+		s.Metrics.FilamentUsedGrams.WithLabelValues(m.Material).Set(m.Grams)
+	}
+	s.Metrics.FilamentGramsAll.Set(stock.TotalFilamentGrams(tasks))
+
+	s.Metrics.Favorites.Set(float64(len(favs)))
+	s.Metrics.PrintsSucceeded.Set(float64(succeeded))
+	s.Metrics.PrintsFailed.Set(float64(failed))
+	s.Metrics.FilterHours.Set(filterHrs)
+	s.Metrics.FilterPercent.Set(filterPct)
+}
+
+// publishSpools republishes the whole spool surface.
+//
+// Split out of publish because the fast poll refreshes spools on their own:
+// AMS slot allocation and remaining weight are the two things that change
+// between daily syncs, and a slot column that is a day stale is a slot column
+// nobody trusts.
+//
+// Resets first, so a spool that left the AMS stops being exported rather than
+// lingering at its last known weight forever.
+func (s *Syncer) publishSpools(spools []stock.Spool) {
+	s.Metrics.ResetSpools()
 
 	for _, sp := range spools {
 		// Per-product link, not the store root: a spool running low should
@@ -273,42 +368,6 @@ func (s *Syncer) publish(spools []stock.Spool, tasks []bambu.Task, favs []bambu.
 		).Set(sp.Used)
 	}
 	s.Metrics.SpoolsRegistered.Set(float64(len(spools)))
-
-	s.publishPrints(tasks)
-
-	for _, d := range favs {
-		s.Metrics.QueueItem.WithLabelValues(
-			sanitise(d.Title),
-			fmt.Sprintf("https://makerworld.com/en/models/%d", d.ID),
-			sanitise(creatorOr(d, "?")),
-		).Set(float64(d.PrintCount))
-	}
-
-	for _, d := range devices {
-		// Deliberately NOT carrying d.DevAccessCode -- it is not even mapped
-		// on the struct. See bambu.Device.
-		s.Metrics.DeviceInfo.WithLabelValues(
-			sanitise(d.Name), d.DevID, d.ProductName, d.ModelName, d.Structure,
-		).Set(1)
-		online := 0.0
-		if d.Online {
-			online = 1
-		}
-		s.Metrics.DeviceOnline.WithLabelValues(sanitise(d.Name), d.DevID).Set(online)
-	}
-
-	// Aggregates over the FULL history, not just the 20 published above.
-	for _, m := range stock.ByMaterial(tasks) {
-		s.Metrics.PrintsByMaterial.WithLabelValues(m.Material).Set(float64(m.Prints))
-		s.Metrics.FilamentUsedGrams.WithLabelValues(m.Material).Set(m.Grams)
-	}
-	s.Metrics.FilamentGramsAll.Set(stock.TotalFilamentGrams(tasks))
-
-	s.Metrics.Favorites.Set(float64(len(favs)))
-	s.Metrics.PrintsSucceeded.Set(float64(succeeded))
-	s.Metrics.PrintsFailed.Set(float64(failed))
-	s.Metrics.FilterHours.Set(filterHrs)
-	s.Metrics.FilterPercent.Set(filterPct)
 }
 
 func (s *Syncer) publishPrints(tasks []bambu.Task) {

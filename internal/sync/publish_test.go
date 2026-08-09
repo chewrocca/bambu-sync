@@ -99,6 +99,12 @@ func value(t *testing.T, reg *prometheus.Registry, name string, labels map[strin
 				}
 			}
 			if match {
+				// Counters as well as gauges: bambu_api_errors_total is the
+				// only way to assert that a best-effort fetch failed VISIBLY
+				// rather than being swallowed.
+				if c := m.GetCounter(); c != nil {
+					return c.GetValue()
+				}
 				return m.GetGauge().GetValue()
 			}
 		}
