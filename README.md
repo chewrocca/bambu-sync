@@ -194,6 +194,21 @@ docker run --rm -p 9110:9110 \
 Images are published for `linux/amd64` and `linux/arm64`, so this runs on a
 Raspberry Pi as-is.
 
+### Cutting a release
+
+Push a `v*` tag. CI builds both architectures and publishes `<version>`,
+`<major>.<minor>` and `latest`:
+
+```sh
+git tag -a v0.6.0 -m "v0.6.0" && git push origin v0.6.0
+```
+
+The `ci` workflow also accepts a manual **Run workflow** with a `version`
+input, for when a tag push is not available — a credential scoped to branches
+but not tag refs, for instance. It publishes the same three tags, but does
+*not* create the git tag, so the commit a release came from is recorded only
+in the image's revision label. Prefer the tag.
+
 ### docker-compose
 
 ```yaml
