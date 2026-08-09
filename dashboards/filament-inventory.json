@@ -305,6 +305,7 @@
                         "material",
                         "color",
                         "store",
+                        "spool",
                         "grams",
                         "capacity",
                         "loaded",

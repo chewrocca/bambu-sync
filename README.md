@@ -87,7 +87,7 @@ rotated Kubernetes Secret is picked up without a restart.
 | `HUMIDITY_METRICS_URL` | *(unset — disabled)* | e.g. `http://bambulab-exporter:9109/metrics` |
 | `HUMIDITY_METRIC_NAME` | `bambulab_ams_unit_humidity` | |
 | `SYNC_DAILY_AT` | `07:00` | Local time, honours `TZ` across DST |
-| `SYNC_FAST_INTERVAL` | `30m` | Current-print refresh |
+| `SYNC_FAST_INTERVAL` | `30m` | Current print **and** spool refresh — 2 API calls a cycle |
 | `SYNC_FULL_INTERVAL` | `24h` | Fallback cadence — see below |
 | `BAMBU_STORE_URL` | `https://us.store.bambulab.com` | Regional storefront for product links |
 | `HISTORY_LIMIT` | `100` | Prints **fetched**; aggregates span all of them |
@@ -269,9 +269,11 @@ low, AMS humid, a new failed print, the filter due, or the token expiring.
 Two behaviours worth knowing:
 
 - **Alerts are evaluated only on the scheduled daily run**, never on startup or
-  the fast poll. Most conditions are *standing* — a spool at 200 g is low on
-  every run until you swap it — so alerting on every cycle would re-ping on
-  every restart.
+  the fast poll, and never on the fast spool refresh either — a spool crossing
+  the reorder threshold mid-afternoon shows on the dashboard immediately but
+  pings Slack at the next daily run. Most conditions are *standing* — a spool
+  at 200 g is low on every run until you swap it — so alerting on every cycle
+  would re-ping on every restart.
 - **The failed-print baseline is in memory** and is seeded on the first run
   after start *without* alerting, so a restart is silent rather than replaying
   history.

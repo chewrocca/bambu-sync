@@ -193,16 +193,26 @@ func New(reg prometheus.Registerer) *Set {
 // Without this, a spool that leaves the AMS or a print that finishes would
 // keep exporting its old series forever.
 func (s *Set) ResetDynamic() {
-	s.SpoolRemainingGrams.Reset()
-	s.SpoolRemainingPercent.Reset()
-	s.SpoolUsedGrams.Reset()
-	s.SpoolDepleted.Reset()
+	s.ResetSpools()
 	s.QueueItem.Reset()
 	s.DeviceInfo.Reset()
 	s.DeviceOnline.Reset()
 	s.PrintsByMaterial.Reset()
 	s.FilamentUsedGrams.Reset()
 	s.ResetPrintInfo()
+}
+
+// ResetSpools clears every per-spool series ahead of a spool repopulation.
+//
+// Narrower than ResetDynamic on purpose. The fast poll refreshes spools
+// WITHOUT refetching print history, favourites or devices, so a full reset
+// there would delete series it has no data to republish -- the same mistake
+// ResetPrintInfo exists to prevent in the other direction.
+func (s *Set) ResetSpools() {
+	s.SpoolRemainingGrams.Reset()
+	s.SpoolRemainingPercent.Reset()
+	s.SpoolUsedGrams.Reset()
+	s.SpoolDepleted.Reset()
 }
 
 // ResetPrintInfo clears every per-print series. Only the FULL sync may call

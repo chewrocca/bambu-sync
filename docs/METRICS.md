@@ -31,6 +31,27 @@ not overlap and neither replaces the other.
 > failed. The metric being *missing* means the exporter is not running at all.
 > Alert on both.
 
+### Which metrics refresh on which cadence
+
+| | Refreshed by |
+| --- | --- |
+| Spool weight, percent, AMS slot, depleted, registered count | Full sync **and** the fast poll (`SYNC_FAST_INTERVAL`, default 30m) |
+| Per-spool `Used` | Full sync. The fast poll re-joins against the last full sync's history rather than refetching 100 tasks, so this figure can be up to a day behind the weight beside it |
+| Recent prints, durations | Full sync and the fast poll |
+| Per-material aggregates, filter, print counts, favourites, devices | Full sync only (daily) |
+| `bambu_sync_up`, exit code, sync duration | Full sync only — deliberately, see above |
+
+The fast poll costs **two** API requests a cycle (one task, one filament) —
+96/day at the default interval, against limits Bambu does not document. If you
+lower the interval, that is the number to scale in your head: the full sync's
+five calls are a rounding error next to it.
+
+Spool metrics are cleared and repopulated on every refresh, so a spool that
+leaves the AMS goes stale within a scrape rather than lingering at its last
+known weight. If the fast poll runs before any full sync has succeeded, it
+publishes no spools at all rather than reporting `Used=0` for everything —
+"never printed" would be a worse lie than "not updated yet".
+
 `bambu_api_errors_total` is labelled by endpoint because the API is
 undocumented and can break one endpoint at a time. "Tasks is failing but
 filament is fine" is the diagnosis that saves an hour.
