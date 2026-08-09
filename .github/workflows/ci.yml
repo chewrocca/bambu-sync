@@ -5,6 +5,19 @@ on:
     branches: [main]
     tags: ["v*"]
   pull_request:
+  # Manual release path, for when pushing a tag is not available -- a scoped
+  # credential that can write branches but not tag refs, for instance.
+  # Publishes exactly what a tag push publishes, under the version you name.
+  #
+  # It does NOT create the tag. Prefer pushing v<version> when you can, so the
+  # commit a release was cut from stays recorded in the repo rather than only
+  # in the image's revision label.
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to publish, e.g. 0.6.0 (no leading v)"
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -55,12 +68,32 @@ jobs:
 
   publish:
     needs: [test, lint, vuln]
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
     steps:
+      # A tag push cannot name a bad version -- the ref IS the version, and
+      # metadata-action's semver parser rejects anything that is not one. A
+      # dispatch input is free text, so a typo would publish
+      # bambu-sync:0.6.O and move :latest onto it. Fail before the build.
+      #
+      # Read through the environment rather than interpolated into the script:
+      # ${{ }} inside run: splices the input into the shell before bash sees
+      # it, which is a command injection waiting for the one day a dispatch is
+      # triggered by something other than a human.
+      - id: version
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if ! printf '%s' "$INPUT_VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::version must look like 0.6.0 -- no leading v, no suffix"
+            exit 1
+          fi
+          echo "full=$INPUT_VERSION" >> "$GITHUB_OUTPUT"
+          echo "minor=${INPUT_VERSION%.*}" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v4
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
@@ -73,9 +106,16 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ github.repository }}
+          # The semver patterns read the TAG, so they produce nothing on a
+          # dispatch; the raw entries below cover that path and produce the
+          # same three tags a tag push would, including moving :latest, which
+          # metadata-action's latest=auto only does for a semver tag ref.
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=${{ steps.version.outputs.full }},enable=${{ github.event_name == 'workflow_dispatch' }}
+            type=raw,value=${{ steps.version.outputs.minor }},enable=${{ github.event_name == 'workflow_dispatch' }}
+            type=raw,value=latest,enable=${{ github.event_name == 'workflow_dispatch' }}
       - uses: docker/build-push-action@v6
         with:
           context: .
@@ -86,4 +126,8 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          build-args: VERSION=${{ github.ref_name }}
+          # github.ref_name is the branch on a dispatch, so a dispatched
+          # release would otherwise ship bambu_sync_build_info{version="main"}
+          # -- the one label whose whole job is answering "which build is
+          # this". Reconstructed with the v so both paths agree.
+          build-args: VERSION=${{ github.event_name == 'workflow_dispatch' && format('v{0}', steps.version.outputs.full) || github.ref_name }}
