@@ -237,8 +237,15 @@ func (s *Syncer) publish(spools []stock.Spool, tasks []bambu.Task, favs []bambu.
 		// link to the thing you would actually reorder.
 		link := s.Store.URL(sp.Name)
 
+		// The `spool` ordinal must be carried by EVERY spool vector, not just
+		// the widest one. bambu_spool_depleted identifies a spool by three
+		// labels and bambu_spool_remaining_grams by four, so a second roll of
+		// the same product overwrote the first on those two vectors even when
+		// the two rolls were at different weights.
+		instance := sp.InstanceLabel()
+
 		s.Metrics.SpoolRemainingGrams.WithLabelValues(
-			sp.Name, sp.Material, sp.Color, link,
+			sp.Name, sp.Material, sp.Color, link, instance,
 		).Set(sp.Left)
 
 		s.Metrics.SpoolRemainingPercent.WithLabelValues(
@@ -247,6 +254,7 @@ func (s *Syncer) publish(spools []stock.Spool, tasks []bambu.Task, favs []bambu.
 			strconv.FormatFloat(sp.Capacity, 'f', -1, 64),
 			strconv.FormatBool(sp.Loaded),
 			sp.SlotLabel(),
+			instance,
 		).Set(sp.Percent)
 
 		// ambiguous="true" means this figure is the colour+material GROUP's
@@ -256,13 +264,15 @@ func (s *Syncer) publish(spools []stock.Spool, tasks []bambu.Task, favs []bambu.
 		if sp.Depleted {
 			depleted = 1
 		}
-		s.Metrics.SpoolDepleted.WithLabelValues(sp.Name, sp.Material, sp.Color).Set(depleted)
+		s.Metrics.SpoolDepleted.WithLabelValues(sp.Name, sp.Material, sp.Color, instance).Set(depleted)
 
 		s.Metrics.SpoolUsedGrams.WithLabelValues(
 			sp.Name, sp.Material, sp.Color, link,
 			strconv.FormatBool(sp.AmbiguousUsage()),
+			instance,
 		).Set(sp.Used)
 	}
+	s.Metrics.SpoolsRegistered.Set(float64(len(spools)))
 
 	s.publishPrints(tasks)
 

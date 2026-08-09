@@ -171,9 +171,9 @@ func TestPublishSpoolUsedGramsExposition(t *testing.T) {
 	assertExposition(t, reg, "bambu_spool_used_grams", `
 # HELP bambu_spool_used_grams Lifetime filament consumed for this spool's colour+material group. See the ambiguous label.
 # TYPE bambu_spool_used_grams gauge
-bambu_spool_used_grams{ambiguous="false",color="#123456",material="PA",name="Bambu Nylon",store="https://us.store.bambulab.com/collections/3d-printer-filament"} 50
-bambu_spool_used_grams{ambiguous="true",color="#000000",material="PLA",name="PLA Basic",store="https://us.store.bambulab.com/products/pla-basic-filament"} 884.91
-bambu_spool_used_grams{ambiguous="true",color="#000000",material="PLA",name="PLA Matte",store="https://us.store.bambulab.com/products/pla-matte"} 884.91
+bambu_spool_used_grams{ambiguous="false",color="#123456",material="PA",name="Bambu Nylon",spool="",store="https://us.store.bambulab.com/collections/3d-printer-filament"} 50
+bambu_spool_used_grams{ambiguous="true",color="#000000",material="PLA",name="PLA Basic",spool="",store="https://us.store.bambulab.com/products/pla-basic-filament"} 884.91
+bambu_spool_used_grams{ambiguous="true",color="#000000",material="PLA",name="PLA Matte",spool="",store="https://us.store.bambulab.com/products/pla-matte"} 884.91
 `)
 }
 
@@ -187,9 +187,9 @@ func TestPublishSpoolRemainingPercentExposition(t *testing.T) {
 	assertExposition(t, reg, "bambu_spool_remaining_percent", `
 # HELP bambu_spool_remaining_percent Remaining filament as a percentage of spool capacity.
 # TYPE bambu_spool_remaining_percent gauge
-bambu_spool_remaining_percent{ams_slot="",capacity="1000",color="#000000",grams="750",loaded="false",material="PLA",name="PLA Matte",store="https://us.store.bambulab.com/products/pla-matte"} 75
-bambu_spool_remaining_percent{ams_slot="",capacity="1000",color="#123456",grams="900",loaded="false",material="PA",name="Bambu Nylon",store="https://us.store.bambulab.com/collections/3d-printer-filament"} 90
-bambu_spool_remaining_percent{ams_slot="AMS2 0:A",capacity="1000",color="#000000",grams="200",loaded="true",material="PLA",name="PLA Basic",store="https://us.store.bambulab.com/products/pla-basic-filament"} 20
+bambu_spool_remaining_percent{ams_slot="",capacity="1000",color="#000000",grams="750",loaded="false",material="PLA",name="PLA Matte",spool="",store="https://us.store.bambulab.com/products/pla-matte"} 75
+bambu_spool_remaining_percent{ams_slot="",capacity="1000",color="#123456",grams="900",loaded="false",material="PA",name="Bambu Nylon",spool="",store="https://us.store.bambulab.com/collections/3d-printer-filament"} 90
+bambu_spool_remaining_percent{ams_slot="AMS2 0:A",capacity="1000",color="#000000",grams="200",loaded="true",material="PLA",name="PLA Basic",spool="",store="https://us.store.bambulab.com/products/pla-basic-filament"} 20
 `)
 }
 
@@ -378,5 +378,63 @@ func TestPublishFavourites(t *testing.T) {
 	}
 	if got := value(t, reg, "bambu_makerworld_favorites", nil); got != 2 {
 		t.Errorf("favourites count: want 2, got %v", got)
+	}
+}
+
+// The 18-to-19 bug at the exposition layer, which is where it actually bit.
+//
+// stock.Join returning 19 spools is not enough: every spool vector is keyed on
+// its labels, so two rolls of the same product overwrote each other and the
+// dashboard's count() saw 18. The narrow vectors are the worst of it —
+// bambu_spool_depleted identifies a spool by three labels, so two rolls
+// collided there even at different weights.
+func TestPublishKeepsDuplicateSpoolsDistinct(t *testing.T) {
+	s, reg := fixture(t, 20)
+
+	// Two physically distinct rolls of one product, at different weights: the
+	// wide percent vector separates them on `grams` alone, the narrow ones
+	// have nothing but the ordinal.
+	s.publish([]stock.Spool{
+		{
+			Name: "PLA Basic", Material: "PLA", Color: "#000000",
+			Left: 1000, Capacity: 1000, Percent: 100, Shared: 2, Instance: 1,
+		},
+		{
+			Name: "PLA Basic", Material: "PLA", Color: "#000000",
+			Left: 200, Capacity: 1000, Percent: 20, Shared: 2, Instance: 2,
+		},
+	}, nil, nil, nil, 0, 0, 0, 0)
+
+	for _, name := range []string{
+		"bambu_spool_remaining_grams",
+		"bambu_spool_remaining_percent",
+		"bambu_spool_used_grams",
+		"bambu_spool_depleted",
+	} {
+		if got := count(t, reg, name); got != 2 {
+			t.Errorf("%s: two rolls must publish two series, got %d", name, got)
+		}
+	}
+
+	// The reorder panel counts series below the threshold. With one series per
+	// product the empty roll would have hidden the low one, or vice versa.
+	if got := value(t, reg, "bambu_spool_remaining_grams", map[string]string{"spool": "2"}); got != 200 {
+		t.Errorf("the second roll's own weight must survive: want 200, got %v", got)
+	}
+	if got := value(t, reg, "bambu_spool_remaining_grams", map[string]string{"spool": ""}); got != 1000 {
+		t.Errorf("the first roll's own weight must survive: want 1000, got %v", got)
+	}
+}
+
+// The count panel reads the exporter's own tally rather than count() over a
+// vector, so it stays honest even if two spools ever do collapse onto one
+// series again. It is also the diagnostic that tells "the API never returned
+// the spool" apart from "the spool collapsed onto an existing series".
+func TestPublishSpoolsRegisteredCountsSpoolsNotSeries(t *testing.T) {
+	s, reg := fixture(t, 20)
+	s.publish(fixtureSpools(), nil, nil, nil, 0, 0, 0, 0)
+
+	if got := value(t, reg, "bambu_spools_registered", nil); got != 3 {
+		t.Errorf("want 3 registered spools, got %v", got)
 	}
 }

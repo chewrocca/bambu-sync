@@ -216,3 +216,76 @@ func TestTotalFilamentGrams(t *testing.T) {
 		t.Errorf("TotalFilamentGrams = %v, want 175", got)
 	}
 }
+
+// The 18-to-19 bug. Two rolls of the SAME product are identical in every field
+// the filament endpoint gives us, so the metric label sets they produce are
+// identical too — and a Prometheus GaugeVec keyed on those labels holds one
+// series, not two. Buying a second black PLA Basic left the dashboard's spool
+// count unchanged.
+//
+// Join must therefore hand out an ordinal that separates them, and it must NOT
+// hand one to a spool that has no duplicate: the label is empty in that case
+// precisely so existing series identities survive the change.
+func TestJoinDistinguishesIdenticalSpools(t *testing.T) {
+	fil := []bambu.Filament{
+		{FilamentName: "PLA Basic", FilamentType: "PLA", Color: "#000000FF", NetWeight: 1000, TotalNetWeight: 1000},
+		{FilamentName: "PLA Basic", FilamentType: "PLA", Color: "#000000FF", NetWeight: 1000, TotalNetWeight: 1000},
+		{FilamentName: "Bambu Nylon", FilamentType: "PA", Color: "#123456FF", NetWeight: 900, TotalNetWeight: 1000},
+	}
+
+	got := Join(fil, nil)
+	if len(got) != 3 {
+		t.Fatalf("want 3 spools, got %d", len(got))
+	}
+
+	labels := map[string][]string{}
+	for _, s := range got {
+		labels[s.Name] = append(labels[s.Name], s.InstanceLabel())
+	}
+
+	// Empty then "2": the first roll keeps the identity it already had and
+	// only the duplicate forks a new series.
+	if want := []string{"", "2"}; !equalStrings(labels["PLA Basic"], want) {
+		t.Errorf("duplicated product: want spool labels %q, got %q", want, labels["PLA Basic"])
+	}
+	if want := []string{""}; !equalStrings(labels["Bambu Nylon"], want) {
+		t.Errorf("unduplicated product must stay unlabelled: want %q, got %q", want, labels["Bambu Nylon"])
+	}
+}
+
+// The ordinal keys on the values that are actually PUBLISHED, not on the raw
+// API fields. An unnamed spool falls back to its material for the name label,
+// so two unnamed PLA rolls collide in the exposition even though nothing in
+// the response says "PLA Basic" — the collision the fallbacks create is still
+// a collision.
+func TestJoinDistinguishesSpoolsThatCollideOnlyAfterFallbacks(t *testing.T) {
+	fil := []bambu.Filament{
+		{FilamentType: "PLA", Color: "#000000FF", NetWeight: 400, TotalNetWeight: 1000},
+		{FilamentType: "PLA", Color: "#000000", NetWeight: 900, TotalNetWeight: 1000},
+	}
+
+	got := Join(fil, nil)
+	if len(got) != 2 {
+		t.Fatalf("want 2 spools, got %d", len(got))
+	}
+	seen := map[string]bool{}
+	for _, s := range got {
+		key := s.Name + "|" + s.Material + "|" + s.Color + "|" + s.InstanceLabel()
+		if seen[key] {
+			t.Fatalf("two spools share the published identity %q", key)
+		}
+		seen[key] = true
+	}
+}
+
+func equalStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}

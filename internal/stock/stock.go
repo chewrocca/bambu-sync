@@ -5,6 +5,7 @@ package stock
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/chewrocca/bambu-sync/internal/bambu"
@@ -36,6 +37,39 @@ type Spool struct {
 	// feed. Attributing Used to both would double-count — an earlier bash
 	// version did exactly that and inflated one figure by 885 g.
 	Shared int
+
+	// Instance disambiguates spools that are otherwise identical: 1 for the
+	// first spool with a given (name, material, colour), 2 for the next, and
+	// so on.
+	//
+	// Two spools of the SAME product are indistinguishable in every field this
+	// exporter maps, so without an ordinal they publish one metric series
+	// between them and the second one silently vanishes: buying a second black
+	// PLA Basic left the dashboard's spool count unchanged, because the two
+	// rolls collapsed onto one label set.
+	//
+	// An ordinal, not an identifier: if the filament endpoint turns out to
+	// carry a stable per-spool id (an RFID tag), mapping it and using it here
+	// would be strictly better — this survives a reordered response only
+	// because two spools that collide are interchangeable anyway.
+	//
+	// Assigned in API order, before the usage sort, so it does not shuffle
+	// when the usage ranking changes.
+	Instance int
+}
+
+// InstanceLabel is the value of the `spool` metric label: empty for the first
+// spool of its kind, "2", "3"… for each further one.
+//
+// Empty rather than "1" on purpose. Prometheus drops empty label values on
+// ingest, so a spool with no duplicate keeps the exact series identity it had
+// before this label existed — an existing dashboard's series do not all fork
+// just because one duplicated roll arrived.
+func (s Spool) InstanceLabel() string {
+	if s.Instance <= 1 {
+		return ""
+	}
+	return strconv.Itoa(s.Instance)
 }
 
 // AmbiguousUsage reports whether this spool's usage cannot be attributed to it
@@ -116,6 +150,11 @@ func Join(fil []bambu.Filament, tasks []bambu.Task) []Spool {
 		shared[groupKey(f.Color, f.FilamentType)]++
 	}
 
+	// How many spools with this exact display identity have been seen so far,
+	// in API order. This is what makes two rolls of the same product two
+	// series rather than one — see Spool.Instance.
+	seen := map[string]int{}
+
 	out := make([]Spool, 0, len(fil))
 	for _, f := range fil {
 		k := groupKey(f.Color, f.FilamentType)
@@ -138,11 +177,18 @@ func Join(fil []bambu.Filament, tasks []bambu.Task) []Spool {
 		if material == "" {
 			material = "?"
 		}
+		color := displayColor(f.Color)
+
+		// Keyed on the RESOLVED display values, not the raw ones: two spools
+		// collide in the metrics exactly when the labels they publish match,
+		// and those labels are what the fallbacks above produce.
+		identity := name + "|" + material + "|" + color
+		seen[identity]++
 
 		out = append(out, Spool{
 			Name:     name,
 			Material: material,
-			Color:    displayColor(f.Color),
+			Color:    color,
 			Left:     f.NetWeight,
 			Capacity: capacity,
 			Percent:  f.NetWeight / capacity * 100,
@@ -152,6 +198,7 @@ func Join(fil []bambu.Filament, tasks []bambu.Task) []Spool {
 			Depleted: f.Depleted,
 			Used:     used[k],
 			Shared:   shared[k],
+			Instance: seen[identity],
 		})
 	}
 
