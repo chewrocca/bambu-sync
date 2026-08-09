@@ -34,6 +34,7 @@ type Set struct {
 	PrintInfo             *prometheus.GaugeVec
 	QueueItem             *prometheus.GaugeVec
 	Favorites             prometheus.Gauge
+	SpoolsRegistered      prometheus.Gauge
 
 	BuildInfo         *prometheus.GaugeVec
 	SyncDuration      prometheus.Gauge
@@ -71,13 +72,27 @@ func New(reg prometheus.Registerer) *Set {
 			"Count of failed prints in the fetched history."),
 		Favorites: f.gauge("bambu_makerworld_favorites",
 			"Count of favourited MakerWorld designs."),
+		// The exporter's own count, not count() over a label-bearing vector.
+		//
+		// A counted vector answers "how many distinct label sets", which is
+		// only the same question while every spool has a distinct label set.
+		// It is also the diagnostic that separates "the API never returned the
+		// new spool" from "the new spool collapsed onto an existing series":
+		// this gauge tracks the API, the series count tracks the exposition.
+		SpoolsRegistered: f.gauge("bambu_spools_registered",
+			"Count of RFID-registered spools returned by the filament endpoint."),
 
+		// The `spool` label is what keeps two rolls of the SAME product two
+		// series instead of one. It is empty for a spool with no duplicate and
+		// "2", "3"… for each further roll of that product — and Prometheus
+		// drops empty label values on ingest, so adding it did not fork the
+		// series a dashboard was already querying. See stock.Spool.Instance.
 		SpoolRemainingGrams: f.gaugeVec("bambu_spool_remaining_grams",
 			"Remaining filament weight per registered spool.",
-			[]string{"name", "material", "color", "store"}),
+			[]string{"name", "material", "color", "store", "spool"}),
 		SpoolRemainingPercent: f.gaugeVec("bambu_spool_remaining_percent",
 			"Remaining filament as a percentage of spool capacity.",
-			[]string{"name", "material", "color", "store", "grams", "capacity", "loaded", "ams_slot"}),
+			[]string{"name", "material", "color", "store", "grams", "capacity", "loaded", "ams_slot", "spool"}),
 		// Lifetime consumption per (colour, material) group.
 		//
 		// The `ambiguous` label is not decoration. Print history reports only
@@ -89,7 +104,7 @@ func New(reg prometheus.Registerer) *Set {
 		// both spools and inflated a figure by 885 g.
 		SpoolUsedGrams: f.gaugeVec("bambu_spool_used_grams",
 			"Lifetime filament consumed for this spool's colour+material group. See the ambiguous label.",
-			[]string{"name", "material", "color", "store", "ambiguous"}),
+			[]string{"name", "material", "color", "store", "ambiguous", "spool"}),
 
 		PrintInfo: f.gaugeVec("bambu_print_info",
 			"Recent prints. Value is grams used; labels carry model, URL, date, outcome and slicer profile.",
@@ -135,7 +150,7 @@ func New(reg prometheus.Registerer) *Set {
 		// existing series identity and break the dashboards.
 		SpoolDepleted: f.gaugeVec("bambu_spool_depleted",
 			"1 if the spool is marked depleted (a finished roll, not a reorder signal).",
-			[]string{"name", "material", "color"}),
+			[]string{"name", "material", "color", "spool"}),
 		DeviceInfo: f.gaugeVec("bambu_device_info",
 			"Bound printer identity from the cloud account. Always 1.",
 			[]string{"name", "serial", "product_name", "model_name", "structure"}),

@@ -56,10 +56,11 @@ Days remaining: `(bambu_token_expires_timestamp_seconds - time()) / 86400`
 
 | Metric | Type | Labels | |
 | --- | --- | --- | --- |
-| `bambu_spool_remaining_grams` | gauge | `name` `material` `color` `store` | Remaining weight |
+| `bambu_spools_registered` | gauge | — | How many spools the filament endpoint returned |
+| `bambu_spool_remaining_grams` | gauge | `name` `material` `color` `store` `spool` | Remaining weight |
 | `bambu_spool_remaining_percent` | gauge | + `grams` `capacity` `loaded` `ams_slot` | Same, as % of capacity |
-| `bambu_spool_used_grams` | gauge | `name` `material` `color` `store` **`ambiguous`** | Lifetime consumption — **read the caveat** |
-| `bambu_spool_depleted` | gauge | `name` `material` `color` | 1 = a finished roll |
+| `bambu_spool_used_grams` | gauge | `name` `material` `color` `store` `spool` **`ambiguous`** | Lifetime consumption — **read the caveat** |
+| `bambu_spool_depleted` | gauge | `name` `material` `color` `spool` | 1 = a finished roll |
 
 The `store` label is the **product page for that filament**, not a shop front —
 so a low-filament panel or alert links straight to what you would reorder. The
@@ -68,6 +69,38 @@ slugs are verified against the store, not guessed: `PLA Silk+` is
 Basic` is `pla-basic-filament`, `ABS` is `abs-filament`. An unrecognised
 filament falls back to the filament *collection*, never to a guessed slug.
 Set `BAMBU_STORE_URL` for a non-US storefront; the slugs are the same.
+
+### The `spool` label, and why counting series is not counting spools
+
+Two rolls of the **same product** are identical in every field the filament
+endpoint gives us — same name, same material, same colour — so they publish
+identical label sets, and a Prometheus vector keyed on those labels holds
+*one* series for the pair. The second roll silently disappears: it does not
+add a row to the inventory table and it does not move `count()`.
+
+The `spool` label is the discriminator. It is **empty** for a spool with no
+duplicate and `"2"`, `"3"`… for each further roll of that product:
+
+```
+bambu_spool_remaining_grams{name="PLA Basic",color="#000000"}            1000
+bambu_spool_remaining_grams{name="PLA Basic",color="#000000",spool="2"}   200
+```
+
+Prometheus drops empty label values on ingest, so a spool with no duplicate
+kept the exact series identity it had before this label existed — adding it
+did not fork every series a dashboard was already querying.
+
+The ordinal is assigned in the order the API returns spools; the exporter maps
+no per-spool id, and does not guess at one. If two rolls of one product swap
+places in the response, they swap ordinals; nothing else about them differs,
+so `spool="2"` means "the second roll of this product", not "that particular
+roll, forever".
+
+**Count spools with `bambu_spools_registered`, not with `count()`.** It is the
+exporter's own tally of what the API returned, so it stays right regardless of
+label collisions — and comparing the two is the diagnostic that separates *the
+API never returned the new spool* (a sealed spare the AMS has never scanned)
+from *the new spool collapsed onto an existing series*.
 
 ### ⚠️ `bambu_spool_used_grams` is not always summable
 
@@ -193,6 +226,9 @@ absent(bambu_sync_up) or bambu_sync_up == 0
 
 # Spools to reorder
 bambu_spool_remaining_grams <= 250
+
+# How many spools exist -- the exporter's tally, not a series count
+bambu_spools_registered
 
 # Success rate over the fetched history
 bambu_prints_succeeded / (bambu_prints_succeeded + bambu_prints_failed)

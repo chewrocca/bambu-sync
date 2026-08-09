@@ -54,7 +54,7 @@
                       "kind": "DataQuery",
                       "spec": {
                         "editorMode": "code",
-                        "expr": "count(bambu_spool_remaining_percent)",
+                        "expr": "bambu_spools_registered",
                         "instant": true,
                         "legendFormat": "Spools",
                         "range": false
@@ -69,7 +69,7 @@
               "transformations": []
             }
           },
-          "description": "Total RFID-registered spools known to the AMS.",
+          "description": "Total RFID-registered spools known to the AMS.\n\nThe exporter's own tally, not count() over a spool vector -- a counted vector answers \"how many distinct label sets\", which stops being the same question the moment two spools share one.",
           "id": 2,
           "links": [],
           "title": "Spools registered",

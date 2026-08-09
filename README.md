@@ -32,8 +32,13 @@ reading the *printer*). They do not overlap and neither replaces the other.
 | **MakerWorld** | Favourites, treated as a print queue |
 | **Exporter health** | `up`, last-run, duration, build info, per-endpoint error counter, token expiry |
 
-Three things are worth knowing before you build anything on these:
+Four things are worth knowing before you build anything on these:
 
+- **Count spools with `bambu_spools_registered`, not `count()`.** Two rolls of
+  the same product are identical in every field the API gives us, so they
+  share a label set; the `spool` label (empty, then `"2"`, `"3"`…) is what
+  keeps them distinct series. The gauge is the exporter's own tally and is
+  right either way.
 - **`bambu_spool_used_grams` is not always summable.** Print history reports
   only the broad material, never the variant, so two same-colour spools share
   one figure. It carries an `ambiguous` label saying so. Summing blindly
