@@ -183,7 +183,7 @@ func (s *Syncer) handleFetchErr(ctx context.Context, what string, err error, opt
 				Title: "*Bambu token expired or revoked*",
 				Body: "The cloud token no longer authenticates, so print history, " +
 					"filament stock and favourites have stopped updating.\n" +
-					"Re-authenticate and update both the token and its expiry date.",
+					s.tokenRenewalBody(),
 			}})
 		}
 	}

@@ -27,6 +27,13 @@ type Config struct {
 	// alongside.
 	TokenExpiryFile string
 
+	// TokenRenewalNote is a free-text, site-specific line appended to the token
+	// expiry and 401 alerts: where the secret actually lives ("1Password item
+	// Bambu Lab, synced by ExternalSecret bambu-sync in ns printers"). The
+	// exporter only knows the FILES it reads, not what feeds them, and the
+	// person reading the alert at 07:00 needs the latter.
+	TokenRenewalNote string
+
 	BaseURL string
 
 	// SlackWebhookFile is the incoming-webhook URL, again as a file.
@@ -70,9 +77,10 @@ type Config struct {
 // a single-printer deployment.
 func Load() (*Config, error) {
 	c := &Config{
-		TokenFile:       env("BAMBU_TOKEN_FILE", "/etc/bambu/token"),
-		TokenExpiryFile: env("BAMBU_TOKEN_EXPIRY_FILE", "/etc/bambu/expires"),
-		BaseURL:         env("BAMBU_API_BASE_URL", "https://api.bambulab.com/v1"),
+		TokenFile:        env("BAMBU_TOKEN_FILE", "/etc/bambu/token"),
+		TokenExpiryFile:  env("BAMBU_TOKEN_EXPIRY_FILE", "/etc/bambu/expires"),
+		TokenRenewalNote: env("TOKEN_RENEWAL_NOTE", ""),
+		BaseURL:          env("BAMBU_API_BASE_URL", "https://api.bambulab.com/v1"),
 
 		SlackWebhookFile: env("SLACK_WEBHOOK_FILE", "/etc/bambu/slack-webhook"),
 		SlackUsername:    env("SLACK_USERNAME", "Bambu Sync"),

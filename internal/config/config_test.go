@@ -160,6 +160,10 @@ func TestLoadStringDefaults(t *testing.T) {
 		{"TokenExpiryFile", c.TokenExpiryFile, "/etc/bambu/expires"},
 		{"SlackWebhookFile", c.SlackWebhookFile, "/etc/bambu/slack-webhook"},
 
+		// Free text for the alerts; empty by default so a generic deployment
+		// gets no half-sentence about a secret store it does not use.
+		{"TokenRenewalNote", c.TokenRenewalNote, ""},
+
 		// The /v1 is mandatory; without it every endpoint 404s.
 		{"BaseURL", c.BaseURL, "https://api.bambulab.com/v1"},
 
