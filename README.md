@@ -95,6 +95,7 @@ rotated Kubernetes Secret is picked up without a restart.
 | `HUMIDITY_WARN` / `HUMIDITY_CRIT` | `30` / `45` | % RH |
 | `FILTER_INTERVAL_HOURS` | `1440` | |
 | `TOKEN_WARN_DAYS` | `14` | Warn this far ahead of expiry |
+| `TOKEN_RENEWAL_NOTE` | *(unset)* | Free text appended to token alerts: where the secret lives |
 | `FAVORITES_LIMIT` / `PRINT_INFO_LIMIT` | `25` / `20` | Cardinality caps |
 | `LISTEN_ADDR` | `:9110` | |
 | `ENABLE_PPROF` | `false` | Serve `/debug/pprof` — **opt-in**, see below |
@@ -154,6 +155,12 @@ There is **no working refresh endpoint**. Re-authentication is manual and
 interactive: email, password, and an emailed 2FA code. When you re-auth,
 **update both the token and its expiry date** — updating only the token leaves
 the exporter warning against a stale date.
+
+The Slack alerts say all of this — which token, how to log in again, and the
+two files the exporter reads — but they cannot know what *feeds* those files.
+Set `TOKEN_RENEWAL_NOTE` to the thing you would otherwise have to remember at
+07:00 ("1Password item *Bambu Lab*, synced by ExternalSecret `bambu-sync`")
+and it is appended to both the expiry warning and the 401 alert.
 
 ## Running
 

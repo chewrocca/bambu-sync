@@ -58,6 +58,11 @@ spec:
             # would conflate "deliberately off" with "misconfigured".
             - name: SLACK_ALERTS_ENABLED
               value: "false"
+            # Appended to the token-expiry and 401 alerts. The exporter knows
+            # which FILES it reads; this names what feeds them, so the alert
+            # says where to go rather than just what to do.
+            - name: TOKEN_RENEWAL_NOTE
+              value: "Rotate the token and expiry in the bambu-sync Secret (or its External Secrets source)."
           volumeMounts:
             - name: secrets
               mountPath: /etc/bambu

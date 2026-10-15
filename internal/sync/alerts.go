@@ -100,10 +100,32 @@ func (s *Syncer) tokenExpiryAlert() (notify.Alert, bool) {
 	if days < 0 {
 		title = fmt.Sprintf("*Bambu token expired %d days ago* (%s)", -days, raw)
 	}
-	return notify.Alert{
-		Title: title,
-		Body: "Re-authentication is manual — the refresh endpoint does not work. " +
-			"Update BOTH the token and its expiry date, or this warning will " +
-			"keep firing against a stale date.",
-	}, true
+	return notify.Alert{Title: title, Body: s.tokenRenewalBody()}, true
+}
+
+// tokenRenewalBody is the shared explanation under both token alerts: which
+// token this is, how to get a new one, and where to put it. The first two are
+// the same everywhere; the last is only knowable here as the files the
+// exporter reads, so TOKEN_RENEWAL_NOTE lets a deployment name the actual
+// source of truth behind them.
+func (s *Syncer) tokenRenewalBody() string {
+	var b strings.Builder
+	b.WriteString("*Which token:* the Bambu Lab *cloud API bearer token* this exporter " +
+		"uses to read your account (print history, filament stock, favourites). " +
+		"Not the printer's LAN access code.\n")
+	b.WriteString("*How to renew:* re-authentication is manual — the refresh endpoint " +
+		"does not work. Log in again at api.bambulab.com with your Bambu account " +
+		"email and password, then the emailed verification code; the response " +
+		"carries `accessToken` and `expiresIn`. See the README's Authentication " +
+		"section for the exact requests.\n")
+	fmt.Fprintf(&b, "*Where to update it:* the exporter reads the token from `%s` and the "+
+		"expiry date from `%s`. Update whatever secret feeds those files. ",
+		s.Cfg.TokenFile, s.Cfg.TokenExpiryFile)
+	b.WriteString("Update BOTH the token and its expiry date (today + `expiresIn`, as " +
+		"YYYY-MM-DD), or this warning will keep firing against a stale date.")
+	if note := strings.TrimSpace(s.Cfg.TokenRenewalNote); note != "" {
+		b.WriteString("\n*For this deployment:* ")
+		b.WriteString(note)
+	}
+	return b.String()
 }

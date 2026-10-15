@@ -25,14 +25,16 @@ func testSyncer(t *testing.T, expiry string) *Syncer {
 	}
 	return &Syncer{
 		Cfg: &config.Config{
-			TokenExpiryFile: expiryFile,
-			Location:        time.UTC,
-			LowGrams:        250,
-			HumidityWarn:    30,
-			HumidityCrit:    45,
-			FilterHours:     1440,
-			TokenWarnDays:   14,
-			StoreURL:        "https://example.invalid/store",
+			TokenFile:        filepath.Join(dir, "token"),
+			TokenExpiryFile:  expiryFile,
+			TokenRenewalNote: "1Password item Bambu Lab, synced by ExternalSecret bambu-sync",
+			Location:         time.UTC,
+			LowGrams:         250,
+			HumidityWarn:     30,
+			HumidityCrit:     45,
+			FilterHours:      1440,
+			TokenWarnDays:    14,
+			StoreURL:         "https://example.invalid/store",
 		},
 		Log: slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
@@ -173,6 +175,28 @@ func TestTokenExpiryAlert(t *testing.T) {
 		// forever against a stale value. The message must say so.
 		if !strings.Contains(a.Body, "BOTH") {
 			t.Errorf("body must warn to update both token and expiry, got %q", a.Body)
+		}
+		// "Which token, and where do I update it?" was the first question the
+		// original one-liner left unanswered. The body must name the token,
+		// both files the exporter reads, and the site-specific note.
+		for _, want := range []string{
+			"cloud API bearer token",
+			s.Cfg.TokenFile,
+			s.Cfg.TokenExpiryFile,
+			s.Cfg.TokenRenewalNote,
+		} {
+			if !strings.Contains(a.Body, want) {
+				t.Errorf("body must contain %q, got %q", want, a.Body)
+			}
+		}
+	})
+
+	t.Run("no renewal note means no dangling label", func(t *testing.T) {
+		s := testSyncer(t, day(10))
+		s.Cfg.TokenRenewalNote = "  "
+		a, _ := s.tokenExpiryAlert()
+		if strings.Contains(a.Body, "For this deployment") {
+			t.Errorf("blank note must not render its label, got %q", a.Body)
 		}
 	})
 
