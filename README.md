@@ -122,45 +122,73 @@ nothing the capped list does not already show.
 
 ## Authentication
 
-There is no API-key page in Bambu's UI. You log in as yourself and keep the
-bearer token it hands back.
+There is no API-key page in Bambu's UI. Re-authenticate to obtain the
+**cloud API bearer token**, separate from the printer's LAN access code.
+The refresh endpoint does not work; renewal is manual.
+
+For a token stored in 1Password, run the secure helper from this checkout
+(Python 3 and a signed-in 1Password CLI are required):
 
 ```sh
-curl -sS -X POST https://api.bambulab.com/v1/user-service/user/login \
-  -H 'Content-Type: application/json' \
-  -d '{"account":"you@example.com","password":"..."}'
+python3 scripts/renew-token.py --vault 'Easytyger k8s' --item bambu-printer --section 'Bambu Sync'
 ```
 
-Most accounts get `{"loginType":"verifyCode"}` and an **emailed code** rather
-than a token. Send it back with the code and no password:
+This command **writes the existing token and expires fields** when run. It
+prompts for your Bambu email, password, and, when requested, emailed code with
+input hidden. Do not paste credentials into commands or enable shell/process
+tracing. Do not redirect or record the interactive session.
 
-```sh
-curl -sS -X POST https://api.bambulab.com/v1/user-service/user/login \
-  -H 'Content-Type: application/json' \
-  -d '{"account":"you@example.com","code":"123456"}'
-```
+The helper follows this repository's observed, unofficial login flow:
 
-The response carries `accessToken` and `expiresIn` (seconds, ~3 months). Write
-the token to your token file, and **today + `expiresIn`** as `YYYY-MM-DD` to
-the expiry file.
+1. POST JSON with `account` and `password` to
+   `https://api.bambulab.com/v1/user-service/user/login`.
+2. If the response has `loginType: verifyCode`, POST to the same URL with
+   `account` and the emailed `code`, without the password.
+3. Read `accessToken` and `expiresIn` (seconds) from the successful response.
+   Compute the expiry as the current UTC time plus `expiresIn`, stored as
+   `YYYY-MM-DD`. No response or credential is printed. The date is an
+   approximation: the exporter interprets it as midnight in its configured
+   timezone, so it may warn before the precise expiry time.
 
-> Mind your shell history with a password on the command line — use a heredoc
-> or a file, not an inline `-d`, if that matters to you.
+The helper retrieves the item JSON in memory, requires exactly one section
+with the **exact** supplied label and exactly one existing `token` and
+`expires` field in it, then changes only those two values. It preserves IDs
+and all other sections. It requires a concealed token field and a text expiry
+field so the mounted expiry remains `YYYY-MM-DD`. An unexpected schema stops
+renewal; inspect it in the 1Password app rather than inventing another section.
+An unrelated section with a similar name is left alone.
 
-The token is an **opaque bearer string, not a JWT** — its expiry cannot be
-decoded from it. That is the whole reason the expiry date is configured
-separately.
+**Passkey limitation:** 1Password warns that JSON template edits can overwrite
+passkeys. This helper therefore accepts only API Credential or Secure Note
+items and refuses Login and unknown categories, even if their JSON contains
+no passkey field. For a Login item, update the existing fields in the
+1Password app instead; do not change the item's category to bypass the guard.
+The live item's category has not been checked during preparation. Preservation
+of other values applies to the fetched JSON snapshot; avoid concurrent edits
+to the item while running the helper.
 
-There is **no working refresh endpoint**. Re-authentication is manual and
-interactive: email, password, and an emailed 2FA code. When you re-auth,
-**update both the token and its expiry date** — updating only the token leaves
-the exporter warning against a stale date.
+The underlying CLI commands are `op item get ITEM --vault VAULT --format=json`
+and JSON piped directly to `op item edit ITEM_ID --vault VAULT`, with edit
+output suppressed. No credential is put in an argument, environment variable,
+or temporary file. These are documented in the
+[official 1Password item reference](https://developer.1password.com/docs/cli/reference/management-commands/item/#item-edit).
+For assignment syntax, the exact existing section is `Bambu Sync`, so the
+field identifiers are `Bambu Sync.token` and `Bambu Sync.expires`.
+**Do not append `<SECTION>`**: it becomes part of a new literal section name.
+Avoid assignment arguments for credentials; they can appear in process lists.
 
-The Slack alerts say all of this — which token, how to log in again, and the
-two files the exporter reads — but they cannot know what *feeds* those files.
-Set `TOKEN_RENEWAL_NOTE` to the thing you would otherwise have to remember at
-07:00 ("1Password item *Bambu Lab*, synced by ExternalSecret `bambu-sync`")
-and it is appended to both the expiry warning and the 401 alert.
+For the Easytyger deployment, ExternalSecret `bambu-sync` reads
+`bambu-printer/Bambu Sync/token` and `bambu-printer/Bambu Sync/expires` from
+vault `Easytyger k8s`. Update **BOTH** fields in that original section. ExternalSecret refreshes every 12 hours. Wait
+for it and the mounted files to refresh, then check the next sync.
+The exporter re-reads the files each cycle, so renewal does not require a
+restart. Restarting cannot correct a stale date in the source item.
+
+The token is opaque; the exporter uses the separately stored date. Updating
+only the token leaves the alert counting down against a stale expiry. Remaining
+days round up; overdue days round down, with the first day shown as “less than
+1 day overdue.” A 401
+may indicate revocation earlier than that date, and has its own alert.
 
 ## Running
 

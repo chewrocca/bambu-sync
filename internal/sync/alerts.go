@@ -2,6 +2,7 @@ package sync
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -82,6 +83,11 @@ func (s *Syncer) buildAlerts(low []stock.Spool, hum humidity.Reading, humState s
 // alerting: the stored date can be wrong — a password change revokes the token
 // early — so it does not replace alerting on an actual 401, it precedes it.
 func (s *Syncer) tokenExpiryAlert() (notify.Alert, bool) {
+	return s.tokenExpiryAlertAt(time.Now())
+}
+
+// Accept a clock value so expiry boundaries and DST can be tested exactly.
+func (s *Syncer) tokenExpiryAlertAt(now time.Time) (notify.Alert, bool) {
 	raw, err := config.ReadSecret(s.Cfg.TokenExpiryFile)
 	if err != nil {
 		return notify.Alert{}, false
@@ -91,16 +97,32 @@ func (s *Syncer) tokenExpiryAlert() (notify.Alert, bool) {
 		return notify.Alert{}, false
 	}
 
-	days := int(time.Until(expiry).Hours() / 24)
-	if days > s.Cfg.TokenWarnDays {
+	remaining := expiry.Sub(now)
+	days := int(math.Ceil(remaining.Hours() / 24))
+	if remaining > 0 && days > s.Cfg.TokenWarnDays {
 		return notify.Alert{}, false
 	}
-
-	title := fmt.Sprintf("*Bambu token expires in %d days* (%s)", days, raw)
-	if days < 0 {
-		title = fmt.Sprintf("*Bambu token expired %d days ago* (%s)", -days, raw)
+	title := "*Bambu cloud token expiring soon*"
+	status := fmt.Sprintf("%d days remaining", days)
+	if days == 1 {
+		status = "1 day remaining"
 	}
-	return notify.Alert{Title: title, Body: s.tokenRenewalBody()}, true
+	if remaining <= 0 {
+		title = "*Bambu cloud token expired*"
+		overdue := int(-remaining.Hours() / 24)
+		status = fmt.Sprintf("%d days overdue", overdue)
+		if overdue == 0 {
+			status = "less than 1 day overdue"
+		}
+		if overdue == 1 {
+			status = "1 day overdue"
+		}
+	}
+	return notify.Alert{
+		Title: title,
+		Body: fmt.Sprintf("*Stored expiry:* %s (%s)\n*Status:* %s\n\n%s",
+			expiry.Format("2006-01-02 15:04 MST"), s.Cfg.Location.String(), status, s.tokenRenewalBody()),
+	}, true
 }
 
 // tokenRenewalBody is the shared explanation under both token alerts: which
@@ -110,21 +132,20 @@ func (s *Syncer) tokenExpiryAlert() (notify.Alert, bool) {
 // source of truth behind them.
 func (s *Syncer) tokenRenewalBody() string {
 	var b strings.Builder
-	b.WriteString("*Which token:* the Bambu Lab *cloud API bearer token* this exporter " +
-		"uses to read your account (print history, filament stock, favourites). " +
-		"Not the printer's LAN access code.\n")
-	b.WriteString("*How to renew:* re-authentication is manual — the refresh endpoint " +
-		"does not work. Log in again at api.bambulab.com with your Bambu account " +
-		"email and password, then the emailed verification code; the response " +
-		"carries `accessToken` and `expiresIn`. See the README's Authentication " +
-		"section for the exact requests.\n")
-	fmt.Fprintf(&b, "*Where to update it:* the exporter reads the token from `%s` and the "+
-		"expiry date from `%s`. Update whatever secret feeds those files. ",
+	b.WriteString("*Renew the Bambu Lab cloud API bearer token* used for account history, stock and favourites. " +
+		"This is separate from the printer's LAN access code.\n\n")
+	b.WriteString("*1. Get a new token:* sign in with your Bambu account email and password; " +
+		"if requested, enter the emailed verification code. The login response provides `accessToken` and `expiresIn` (seconds). " +
+		"There is no working automatic refresh.\n")
+	b.WriteString("*2. Save BOTH values:* use the secure interactive helper in " +
+		"<https://github.com/chewrocca/bambu-sync#authentication|Authentication instructions>. " +
+		"It renews the token, computes the expiry date and pipes JSON to `op item edit` without putting credentials in command arguments.\n")
+	fmt.Fprintf(&b, "*3. Confirm sync:* update the secret source feeding `%s` and `%s`. "+
+		"Wait for the secret controller and volume to refresh; the exporter re-reads both files each cycle, without a restart. "+
+		"A stale stored date keeps this warning firing. The stored date is predictive; an HTTP 401 can mean earlier revocation.",
 		s.Cfg.TokenFile, s.Cfg.TokenExpiryFile)
-	b.WriteString("Update BOTH the token and its expiry date (today + `expiresIn`, as " +
-		"YYYY-MM-DD), or this warning will keep firing against a stale date.")
 	if note := strings.TrimSpace(s.Cfg.TokenRenewalNote); note != "" {
-		b.WriteString("\n*For this deployment:* ")
+		b.WriteString("\n\n*For this deployment:*\n")
 		b.WriteString(note)
 	}
 	return b.String()
