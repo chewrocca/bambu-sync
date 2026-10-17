@@ -168,7 +168,7 @@ func TestTokenExpiryAlert(t *testing.T) {
 		if !ok {
 			t.Fatal("want an alert 10 days out")
 		}
-		if !strings.Contains(a.Title, "expires in") {
+		if !strings.Contains(a.Title, "expiring soon") {
 			t.Errorf("want a forward-looking title, got %q", a.Title)
 		}
 		// The footgun: updating the token but not the date leaves this firing
@@ -233,5 +233,46 @@ func TestSanitiseStripsLabelBreakingCharacters(t *testing.T) {
 	}
 	if want := "a b c d e"; got != want {
 		t.Errorf("sanitise = %q, want %q", got, want)
+	}
+}
+
+func TestTokenExpiryBoundaries(t *testing.T) {
+	loc, err := time.LoadLocation("America/Chicago")
+	if err != nil {
+		t.Fatal(err)
+	}
+	expiry := time.Date(2026, 11, 2, 0, 0, 0, 0, loc)
+	for _, tc := range []struct {
+		name  string
+		now   time.Time
+		want  string
+		alert bool
+	}{
+		{"outside window", expiry.Add(-14*24*time.Hour - time.Second), "", false},
+		{"at threshold", expiry.Add(-14 * 24 * time.Hour), "14 days remaining", true},
+		{"last minute", expiry.Add(-time.Minute), "1 day remaining", true},
+		{"at expiry", expiry, "less than 1 day overdue", true},
+		{"first minute overdue", expiry.Add(time.Minute), "less than 1 day overdue", true},
+		{"one day overdue", expiry.Add(24 * time.Hour), "1 day overdue", true},
+		{"three days overdue", expiry.Add(73 * time.Hour), "3 days overdue", true},
+		{"across DST fall back", time.Date(2026, 11, 1, 0, 0, 0, 0, loc), "2 days remaining", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := testSyncer(t, "2026-11-02")
+			s.Cfg.Location = loc
+			a, ok := s.tokenExpiryAlertAt(tc.now)
+			if ok != tc.alert {
+				t.Fatalf("alert=%v, want %v", ok, tc.alert)
+			}
+			if !ok {
+				return
+			}
+			if !strings.Contains(a.Body, tc.want) || !strings.Contains(a.Body, "2026-11-02 00:00 CST") {
+				t.Errorf("unexpected expiry/status: %s", a.Body)
+			}
+			if !tc.now.Before(expiry) && a.Title != "*Bambu cloud token expired*" {
+				t.Errorf("expired token described as future: %s", a.Title)
+			}
+		})
 	}
 }
